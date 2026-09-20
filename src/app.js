@@ -2,7 +2,7 @@
    draws value/verdict markers over the game and explains each verdict. */
 (function () {
   "use strict";
-  var VERSION = "0.3.0";
+  var VERSION = "0.3.1";
   var READ_MS = 700, HOVER_MS = 250, OVERLAY_MS = 5000, OVERLAY_GROUP = "bankwise";
   function $(id) { return document.getElementById(id); }
   var store = {
@@ -367,32 +367,53 @@
     $("dbgicons").addEventListener("click", function (ev) { ev.preventDefault(); wikiIconTest(out); });
     out.style.display = "";
   });
-  /* Could the library be pre-filled from the wiki's item icons?  For up to 15 learned items, fetch
-     the wiki icon, lay it on the bank background at every position in a 44px slot and report the
-     closest it gets to what the game really draws.  0-20 = same picture; 60+ = not usable. */
+  /* Could the wiki's item icons pre-fill the library, or at least GUESS items?  For every learned
+     item (up to 80): fetch its wiki icon, lay it on the bank background at the offsets around the
+     middle of a 44px slot, and then ask the real question - given what the game draws for item A,
+     is A's wiki icon the closest of all the icons fetched?  Reported for two measures: the strict
+     worst-block one the app matches with, and a plain average difference. */
   function wikiIconTest(out) {
-    var pre = document.createElement("div"); pre.textContent = "wiki icon test running..."; out.appendChild(pre);
-    var names = lib.names().slice(0, 15), lines = [], left = names.length;
+    var pre = document.createElement("div"); pre.textContent = "wiki icon test: fetching icons..."; out.appendChild(pre);
+    var names = lib.names().slice(0, 80), icons = [], failed = [], left = names.length, P = 44, grid = { pitch: P, cols: [P / 2], rows: [{ y: P / 2 }] };
     if (!left) { pre.textContent = "teach a few items first"; return; }
-    function done() { if (--left <= 0) pre.textContent = "wiki icon test (distance: under 20 = same picture)\n" + lines.join("\n"); }
+    function mean(a, b) { var t = 0, i; for (i = 0; i < a.length; i++) { var d = a[i] - b[i]; t += d < 0 ? -d : d; } return t / (a.length / 3); }
+    function finish() {
+      if (--left > 0) return;
+      pre.textContent = "wiki icon test: comparing " + icons.length + " icons...";
+      setTimeout(function () {
+        var rows = [], top1 = [0, 0], top3 = [0, 0];
+        icons.forEach(function (me) {
+          var sample = lib.byName[me.name][0].patch, scores = icons.map(function (ic) {
+            var w = 1e9, m = 1e9; ic.patches.forEach(function (pt) { var a = Library.dist(pt, sample), b = mean(pt, sample); if (a < w) w = a; if (b < m) m = b; });
+            return { name: ic.name, w: w, m: m };
+          });
+          var rank = [0, 1].map(function (k) { var key = k ? "m" : "w", mine = scores.filter(function (q) { return q.name === me.name; })[0][key]; return 1 + scores.filter(function (q) { return q[key] < mine; }).length; });
+          [0, 1].forEach(function (k) { if (rank[k] === 1) top1[k]++; if (rank[k] <= 3) top3[k]++; });
+          var mineS = scores.filter(function (q) { return q.name === me.name; })[0];
+          rows.push(me.name + " (" + me.w + "x" + me.h + "): strict " + mineS.w.toFixed(0) + " rank " + rank[0] + ", average " + mineS.m.toFixed(1) + " rank " + rank[1]);
+        });
+        pre.textContent = "wiki icon test, " + icons.length + " icons compared, " + failed.length + " not found\n" +
+          "right icon is the closest: strict " + top1[0] + "/" + icons.length + ", average " + top1[1] + "/" + icons.length + "   in the top 3: strict " + top3[0] + ", average " + top3[1] + "\n" +
+          rows.join("\n") + (failed.length ? "\nnot found: " + failed.join(", ") : "");
+      }, 50);
+    }
     names.forEach(function (name) {
       var img = new Image(); img.crossOrigin = "anonymous";
-      img.onerror = function () { lines.push(name + ": icon did not load (no such file, or the wiki refuses cross-site image reads)"); done(); };
+      img.onerror = function () { failed.push(name); finish(); };
       img.onload = function () {
         try {
           var w = img.width, h = img.height, cv = document.createElement("canvas"); cv.width = w; cv.height = h;
-          var cx = cv.getContext("2d"); cx.drawImage(img, 0, 0); var px = cx.getImageData(0, 0, w, h).data;
-          var best = 1e9, bx = 0, by = 0, P = 44, grid = { pitch: P, cols: [P / 2], rows: [{ y: P / 2 }] }, sample = lib.byName[name][0].patch, dx, dy, x, y;
-          for (dy = 0; dy + h <= P; dy++) for (dx = 0; dx + w <= P; dx++) {
+          var cx = cv.getContext("2d"); cx.drawImage(img, 0, 0); var px = cx.getImageData(0, 0, w, h).data, patches = [], dx, dy, x, y;
+          var cx0 = Math.round((P - w) / 2), cy0 = Math.round(20.5 - h / 2);
+          for (dy = Math.max(0, cy0 - 5); dy <= Math.min(P - h, cy0 + 5); dy++) for (dx = Math.max(0, cx0 - 4); dx <= Math.min(P - w, cx0 + 4); dx++) {
             var buf = { width: P, height: P, data: new Uint8ClampedArray(P * P * 4) };
             for (x = 0; x < P * P; x++) { buf.data[x * 4] = Reader.BG[0]; buf.data[x * 4 + 1] = Reader.BG[1]; buf.data[x * 4 + 2] = Reader.BG[2]; buf.data[x * 4 + 3] = 255; }
             for (y = 0; y < h; y++) for (x = 0; x < w; x++) { var s4 = (y * w + x) * 4, a = px[s4 + 3] / 255, d4 = ((y + dy) * P + x + dx) * 4; buf.data[d4] = px[s4] * a + Reader.BG[0] * (1 - a); buf.data[d4 + 1] = px[s4 + 1] * a + Reader.BG[1] * (1 - a); buf.data[d4 + 2] = px[s4 + 2] * a + Reader.BG[2] * (1 - a); }
-            var d = Library.dist(Reader.patch(buf, grid, 0, 0), sample);
-            if (d < best) { best = d; bx = dx; by = dy; }
+            patches.push(Reader.patch(buf, grid, 0, 0));
           }
-          lines.push(name + ": icon " + w + "x" + h + ", closest " + best.toFixed(1) + " at offset " + bx + "," + by);
-        } catch (e) { lines.push(name + ": loaded but unreadable (" + e.message + ")"); }
-        done();
+          if (patches.length) icons.push({ name: name, w: w, h: h, patches: patches }); else failed.push(name + " (icon " + w + "x" + h + " too big)");
+        } catch (e) { failed.push(name + " (unreadable: " + e.message + ")"); }
+        finish();
       };
       img.src = "https://runescape.wiki/images/" + encodeURIComponent(name.replace(/ /g, "_")) + ".png";
     });

@@ -71,17 +71,33 @@ console.log("real captures");
   var whiteBuf = loadPng(path.join(__dirname, "capture-hover-white.png")), wt = Tip.read(whiteBuf, 694, 540);
   ok("free-to-play item (name in pale cyan, close to the action's white): " + JSON.stringify(wt && wt.text) + " from line " + JSON.stringify(wt && wt.line), wt && wt.text === "Nature rune" && wt.colour.join() === "184,209,209", JSON.stringify(wt));
   ok("the action word alone is never a name", Tip.stripAction("Withdraw-All") === "" && Tip.stripAction("Withdraw-All Coins") === "Coins" && Tip.stripAction("Clean guam") === "Clean guam");
-  /* the tooltip under every third slot of the bank: the grid must survive all of them */
+  /* both real tooltips (small two-panel one, big one with stats), borders included, pasted under
+     every second slot of the bank: same rows, same slots, hovered slot never hidden */
   (function () {
-    function paste(tx, ty) { var o = { width: plainBuf.width, height: plainBuf.height, data: new Uint8ClampedArray(plainBuf.data) }, x, y; for (y = 0; y < 50; y++) for (x = 0; x < 179; x++) { var sp = ((565 + y) * whiteBuf.width + 605 + x) * 4, dp = ((ty + y) * o.width + tx + x) * 4; o.data[dp] = whiteBuf.data[sp]; o.data[dp + 1] = whiteBuf.data[sp + 1]; o.data[dp + 2] = whiteBuf.data[sp + 2]; } return o; }
-    var bad = [], n = 0, r, c;
-    for (r = 0; r < plain.grid.rows.length; r++) for (c = 0; c < 10; c += 3) {
-      var mx = Math.round(plain.grid.cols[c]), my = Math.round(plain.grid.rows[r].y), res = Reader.readBuffer(paste(mx - 88, my + 26), false, 0, 0, plain.grid, null); n++;
-      var want = plain.slots.some(function (q) { return mx >= q.x && mx < q.x + q.w && my >= q.y && my < q.y + q.h; });
-      var got = res.slots && res.slots.filter(function (q) { return mx >= q.x && mx < q.x + q.w && my >= q.y && my < q.y + q.h; })[0];
-      if (res.error || res.slots.length < plain.slots.length || (want && (!got || got.covered))) bad.push(r + "," + c + ":" + (res.error || res.slots.length));
-    }
-    ok("tooltip placed under " + n + " different slots: bank still read every time, hovered slot never hidden", !bad.length, bad.join(" "));
+    var tipsrc = [{ buf: whiteBuf, x: 603, y: 563, w: 184, h: 55, mx: 694, my: 540 }, { buf: hoverBuf, x: 598, y: 364, w: 212, h: 142, mx: 705, my: 342 }];
+    function paste(t, mx, my) { var o = { width: plainBuf.width, height: plainBuf.height, data: new Uint8ClampedArray(plainBuf.data) }, x, y, tx = mx + t.x - t.mx, ty = my + t.y - t.my; for (y = 0; y < t.h; y++) for (x = 0; x < t.w; x++) { if (ty + y >= o.height || tx + x < 0) continue; var sp = ((t.y + y) * t.buf.width + t.x + x) * 4, dp = ((ty + y) * o.width + tx + x) * 4; o.data[dp] = t.buf.data[sp]; o.data[dp + 1] = t.buf.data[sp + 1]; o.data[dp + 2] = t.buf.data[sp + 2]; } return o; }
+    var bad = [], n = 0, rowsWant = plain.grid.rows.map(function (q) { return q.y; }).join();
+    tipsrc.forEach(function (t, ti) {
+      for (var r = 0; r < plain.grid.rows.length; r++) for (var c = ti; c < 10; c += 2) {
+        var mx = Math.round(plain.grid.cols[c]), my = Math.round(plain.grid.rows[r].y), res = Reader.readBuffer(paste(t, mx, my), false, 0, 0, plain.grid, null); n++;
+        var want = plain.slots.some(function (q) { return mx >= q.x && mx < q.x + q.w && my >= q.y && my < q.y + q.h; });
+        var got = res.slots && res.slots.filter(function (q) { return mx >= q.x && mx < q.x + q.w && my >= q.y && my < q.y + q.h; })[0];
+        var rowsGot = res.grid && res.grid.rows.map(function (q) { return q.y; }).join();
+        var open = res.slots ? res.slots.filter(function (q) { return !q.covered; }) : [], hidden = res.slots ? res.slots.length - open.length : 0;
+        var stray = open.filter(function (q) { return !plain.slots.some(function (z) { return z.x === q.x && z.y === q.y; }); }).length;
+        if (res.error || rowsGot !== rowsWant || stray || open.length + hidden < plain.slots.length || (want && (!got || got.covered))) bad.push("tip" + ti + " " + r + "," + c + ":" + (res.error || (rowsGot !== rowsWant ? "rows moved " + rowsGot.slice(-40) : stray + " stray, " + open.length + "+" + hidden)));
+      }
+    });
+    ok("real tooltips placed under " + n + " slots: rows never move, every item still there, hovered slot never hidden", !bad.length, bad.length + " bad: " + bad.slice(0, 12).join(" "));
+  })();
+  /* a big foreign box over the bank (stands in for a right-click menu): lean on the previous lattice */
+  (function () {
+    var o = { width: plainBuf.width, height: plainBuf.height, data: new Uint8ClampedArray(plainBuf.data) }, x, y;
+    for (y = 300; y < 640; y++) for (x = 690; x < 1000; x++) { var q = (y * o.width + x) * 4; o.data[q] = 70 + (x % 7) * 9; o.data[q + 1] = 60 + (y % 5) * 11; o.data[q + 2] = 50; }
+    var alone = Reader.readBuffer(o), leaning = Reader.readBuffer(o, false, 0, 0, plain.grid, null);
+    ok("a menu-sized box over the bank: " + (alone.error ? "unreadable alone" : alone.grid.rows.length + " rows alone") + ", " + (leaning.error || leaning.grid.rows.length + " rows") + " with the previous read", !leaning.error && leaning.grid.rows.length === 20);
+    for (x = 0; x < o.data.length; x += 4) { o.data[x] = 90; o.data[x + 1] = 130; o.data[x + 2] = 70; }
+    ok("bank closed: the previous lattice is NOT reused", !!Reader.readBuffer(o, false, 0, 0, plain.grid, null).error);
   })();
   ok("no tooltip -> nothing read", Tip.read(plainBuf, 705, 342) === null);
   var w0 = tip.area.whole, hover = Reader.readBuffer(hoverBuf, false, 0, 0, plain.grid, { y0: w0.y, y1: w0.y + w0.height });

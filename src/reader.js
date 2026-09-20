@@ -88,7 +88,7 @@
        columns and rows and the lattice cannot be fitted (it broke 79 of 200 hover positions) */
     var tips = darkBoxes(buf, area);
     tips.forEach(function (t) {
-      var x0 = Math.max(0, t.x - ax - 3), x1 = Math.min(aw - 1, t.x - ax + t.w + 2), y0 = Math.max(0, t.y - ay - 3), y1 = Math.min(ah - 1, t.y - ay + t.h + 2);
+      var x0 = Math.max(0, t.x - ax - 6), x1 = Math.min(aw - 1, t.x - ax + t.w + 5), y0 = Math.max(0, t.y - ay - 6), y1 = Math.min(ah - 1, t.y - ay + t.h + 5);   /* the border is 4px; one leftover line down each side once joined every row it passed into a single run */
       for (y = y0; y <= y1; y++) for (x = x0; x <= x1; x++) m[y * aw + x] = 0;
     });
     segs.sort(function (p, q) { return q.n - p.n; });
@@ -133,31 +133,40 @@
     var line = new Uint8Array(ah);
     for (y = 0; y < ah; y++) if (rowN[y] > 0.85 * sw) line[y] = 1;
     /* vertical extent: the longest stretch that is not solid */
-    var rowRuns = runs(Array.prototype.map.call(rowN, function (v, yy) { return line[yy] ? 0 : v; }), 1);
+    var rowRuns = runs(Array.prototype.map.call(rowN, function (v, yy) { return line[yy] ? 0 : v; }), 3);
     /* columns: profile over the non-line rows, ignoring thin runs (tab labels) */
     var tall = rowRuns.filter(function (r) { return r.n >= 14; });
     if (!tall.length) return null;
-    var colN = new Float64Array(sw), mx = 0;
-    tall.forEach(function (r) { for (y = r.a; y <= r.b; y++) for (x = xa; x <= xb; x++) colN[x - xa] += m[y * aw + x]; });
-    for (x = 0; x < sw; x++) if (colN[x] > mx) mx = colN[x];
-    var colRuns = runs(colN, Math.max(1, 0.1 * mx)).filter(function (r) { return r.n >= 8; });
-    if (colRuns.length < 3) return null;
-    var diffs = [];
-    for (i = 1; i < colRuns.length; i++) diffs.push(colRuns[i].c - colRuns[i - 1].c);
-    var p = median(diffs);
-    if (p < 24 || p > 160) return null;
-    /* refine the pitch and offset by least squares on the column indices */
-    var ks = [], cs = [], base = null;
-    colRuns.forEach(function (r) { if (r.n <= 1.05 * p) { if (base === null) base = r.c; ks.push(Math.round((r.c - base) / p)); cs.push(r.c); } });
-    if (ks.length < 3) return null;
-    var n = ks.length, sk = 0, sc = 0, skk = 0, skc = 0;
-    for (i = 0; i < n; i++) { sk += ks[i]; sc += cs[i]; skk += ks[i] * ks[i]; skc += ks[i] * cs[i]; }
-    var den = n * skk - sk * sk;
-    if (den) { p = (n * skc - sk * sc) / den; }
-    if (Math.abs(p - Math.round(p)) < 0.008 * p) p = Math.round(p);        /* slots are a whole number of pixels apart at the usual scales */
-    var o = (sc - p * sk) / n, res = 0;
-    for (i = 0; i < n; i++) res = Math.max(res, Math.abs(cs[i] - (o + p * ks[i])));
-    if (res > 0.15 * p) return null;
+    /* fit the columns twice: first over every tall run to get a rough pitch, then again over only
+       the runs that look like item rows (a button bar or search box is not on the lattice, and when
+       a tooltip hides part of it the fit used to drift by half a pixel per column) */
+    function fitCols(useRuns) {
+      var colN = new Float64Array(sw), mx = 0, xx, yy, ii;
+      useRuns.forEach(function (r) { for (yy = r.a; yy <= r.b; yy++) for (xx = xa; xx <= xb; xx++) colN[xx - xa] += m[yy * aw + xx]; });
+      for (xx = 0; xx < sw; xx++) if (colN[xx] > mx) mx = colN[xx];
+      var colRuns = runs(colN, Math.max(1, 0.1 * mx)).filter(function (r) { return r.n >= 8; });
+      if (colRuns.length < 3) return null;
+      var diffs = [];
+      for (ii = 1; ii < colRuns.length; ii++) diffs.push(colRuns[ii].c - colRuns[ii - 1].c);
+      var pp = median(diffs);
+      if (pp < 24 || pp > 160) return null;
+      var ks = [], cs = [], base = null;
+      colRuns.forEach(function (r) { if (r.n <= 1.05 * pp) { if (base === null) base = r.c; ks.push(Math.round((r.c - base) / pp)); cs.push(r.c); } });
+      if (ks.length < 3) return null;
+      var n = ks.length, sk = 0, sc = 0, skk = 0, skc = 0;
+      for (ii = 0; ii < n; ii++) { sk += ks[ii]; sc += cs[ii]; skk += ks[ii] * ks[ii]; skc += ks[ii] * cs[ii]; }
+      var den = n * skk - sk * sk;
+      if (den) pp = (n * skc - sk * sc) / den;
+      if (Math.abs(pp - Math.round(pp)) < 0.008 * pp) pp = Math.round(pp);        /* slots are a whole number of pixels apart at the usual scales */
+      var oo = (sc - pp * sk) / n, rr = 0;
+      for (ii = 0; ii < n; ii++) rr = Math.max(rr, Math.abs(cs[ii] - (oo + pp * ks[ii])));
+      return rr > 0.15 * pp ? null : { p: pp, o: oo, res: rr };
+    }
+    var fit = fitCols(tall);
+    if (!fit) return null;
+    var itemRuns = tall.filter(function (r) { return r.n >= 0.42 * fit.p && r.n <= 1.15 * fit.p && widestBlob(m, aw, xa, xb, Math.round(r.c)) <= 1.25 * fit.p; });
+    if (itemRuns.length) fit = fitCols(itemRuns) || fit;
+    var p = fit.p, o = fit.o, res = fit.res;
     /* all columns that fit between the walls */
     while (o - p - p / 2 >= -0.12 * p) o -= p;
     var cols = [];
@@ -261,10 +270,24 @@
     return grid;
   }
 
+  function stillBank(buf, x, y, w, h) {
+    var n = 0, t = 0, xx, yy;
+    for (yy = Math.max(0, y); yy < Math.min(buf.height, y + h); yy += 3) for (xx = Math.max(0, x); xx < Math.min(buf.width, x + w); xx += 3) { t++; if (isBg(buf.data, (yy * buf.width + xx) * 4)) n++; }
+    return t > 500 && n >= 0.35 * t;
+  }
   function readBuffer(buf, whole, offX, offY, prev, band) {
     var areas = whole ? [{ x: 0, y: 0, w: buf.width, h: buf.height }] : findAreas(buf), grid = null, i;
     offX = offX || 0; offY = offY || 0;
     for (i = 0; i < areas.length && i < 4 && !grid; i++) grid = fitGrid(buf, areas[i]);
+    /* Something is drawn over the bank that the fit cannot cope with (a right-click menu, an odd
+       tooltip): if the previous lattice's area is still mostly bank background the bank has not
+       gone anywhere, so keep using that lattice instead of flashing "open your bank". */
+    if (!grid && prev && prev.w && stillBank(buf, prev.x - offX, prev.y - offY, prev.w, prev.h)) {
+      grid = { pitch: prev.pitch, residual: prev.residual, x: prev.x - offX, y: prev.y - offY, w: prev.w, h: prev.h, reused: true,
+        cols: prev.cols.map(function (v) { return v - offX; }), rows: prev.rows.map(function (q) { return { y: q.y - offY, section: q.section, clipped: q.clipped }; }),
+        tips: darkBoxes(buf, { x: Math.max(0, prev.x - offX - 60), y: Math.max(0, prev.y - offY), w: Math.min(buf.width - Math.max(0, prev.x - offX - 60), prev.w + 120), h: Math.min(buf.height - Math.max(0, prev.y - offY), prev.h) }) };
+      prev = null;
+    }
     if (!grid) return { error: areas.length ? "no-grid" : "no-bank", areas: areas.length };
     var tips = grid.tips || [];
     if (tips.length) { var ty0 = Math.min.apply(null, tips.map(function (t) { return t.y; })) - 3, ty1 = Math.max.apply(null, tips.map(function (t) { return t.y + t.h; })) + 3; band = band ? { y0: Math.min(band.y0, ty0 + offY), y1: Math.max(band.y1, ty1 + offY) } : { y0: ty0 + offY, y1: ty1 + offY }; }
@@ -281,7 +304,7 @@
       }
     }
     /* report the grid in capture coordinates too (the closures above keep the buffer's own) */
-    var g = { pitch: grid.pitch, residual: grid.residual, x: grid.x + offX, y: grid.y + offY, w: grid.w, h: grid.h,
+    var g = { pitch: grid.pitch, residual: grid.residual, reused: !!grid.reused, x: grid.x + offX, y: grid.y + offY, w: grid.w, h: grid.h,
       cols: grid.cols.map(function (v) { return v + offX; }), rows: grid.rows.map(function (q) { return { y: q.y + offY, section: q.section, clipped: q.clipped, carried: q.carried }; }) };
     return { grid: g, slots: slots, off: { x: offX, y: offY }, tips: tips.map(function (t) { return { x: t.x + offX, y: t.y + offY, w: t.w, h: t.h }; }) };
   }
