@@ -1,0 +1,14 @@
+{
+	"appName": "Bankwise",
+	"description": "Reads your bank: learns each item as you hover it, marks what it is worth, which tab it belongs in, and whether to keep, sell or destroy it.",
+	"appUrl": "./index.html",
+	"configUrl": "./appconfig.json",
+	"iconUrl": "./icon.png",
+	"defaultWidth": 340,
+	"defaultHeight": 520,
+	"minWidth": 300,
+	"minHeight": 320,
+	"maxWidth": 700,
+	"maxHeight": 1200,
+	"permissions": "pixel,overlay,gamestate"
+}

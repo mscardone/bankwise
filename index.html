@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Bankwise</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="./icon.png">
+<link rel="stylesheet" href="./style.css?v=0.1.0">
+</head>
+<body>
+<header>
+  <h1>Bankwise</h1>
+  <label class="toggle" title="Draw markers on top of the bank"><input type="checkbox" id="overlay" checked> overlay</label>
+  <button id="opensettings" title="Layout template, advice options, item library">Settings</button>
+</header>
+
+<div id="status">starting&hellip;</div>
+
+<section id="main">
+  <div id="counts"></div>
+
+  <div id="hover" class="card">
+    <div class="hovertop">
+      <div class="icon" id="hicon"></div>
+      <div class="hovertext">
+        <div id="hname">Open your bank</div>
+        <div id="hprice">&nbsp;</div>
+      </div>
+    </div>
+    <div id="hverdict" class="verdict">&nbsp;</div>
+    <div id="htab">&nbsp;</div>
+    <div id="hpins" style="display:none;visibility:hidden">
+      <button data-pin="keep">Always keep</button>
+      <button data-pin="junk">Always junk</button>
+      <button data-pin="">Clear pin</button>
+    </div>
+    <div id="hfix">
+      <a href="#" id="rename">wrong name?</a>
+      <span id="renamebox" style="display:none"><input id="renameinput" type="text" spellcheck="false" placeholder="exact item name"> <button id="renameok">Save</button></span>
+    </div>
+  </div>
+
+  <div id="filters">
+    <button data-f="all" class="on">All</button>
+    <button data-f="teach">To teach</button>
+    <button data-f="sell">Sell</button>
+    <button data-f="destroy">Destroy</button>
+    <button data-f="review">Review</button>
+  </div>
+  <div id="list"></div>
+
+  <div id="legend">
+    <span><i class="sw red"></i>hover to teach</span>
+    <span><i class="sw amber"></i>unsure, hover to confirm</span>
+    <span><i class="sw t1"></i>1k</span><span><i class="sw t2"></i>10k</span><span><i class="sw t3"></i>100k</span><span><i class="sw t4"></i>1m</span><span><i class="sw t5"></i>10m+</span>
+    <span><b>J</b> junk</span><span><b>D</b> Diango</span><span><b>Q</b> quest done</span><span><b>K</b> quest keep</span>
+  </div>
+</section>
+
+<section id="settings" style="display:none">
+  <h2>Bank layout</h2>
+  <select id="template"></select>
+  <div id="templateblurb" class="hint"></div>
+  <ol id="templatetabs"></ol>
+
+  <h2>Advice</h2>
+  <label class="row">Call a tradeable item junk below <input id="junkbelow" type="number" min="0" step="100"> gp each</label>
+  <div class="hint">Out of the box the advice uses only RuneScape Wiki data, so it is the same for everyone. The options below make it personal; all are off until you turn them on.</div>
+  <label class="row"><input type="checkbox" id="usequests"> Use my quest log (finished quest &rarr; its items can go)</label>
+  <label class="row"><input type="checkbox" id="useskills"> Use my skill levels; supplies matter until level <input id="goallevel" type="number" min="2" max="120"></label>
+  <label class="row"><input type="checkbox" id="useoverrides"> Let me pin items as always-keep or always-junk</label>
+
+  <div id="rmbox">
+    <h2>RuneMetrics</h2>
+    <div class="row"><input id="rmuser" type="text" spellcheck="false" placeholder="RuneScape name"> <button id="rmfetch">Look up</button></div>
+    <div id="rmstatus" class="hint">Only needed for the quest-log and skill-level options. Your RuneMetrics profile must be public.</div>
+    <details id="rmpaste">
+      <summary>Lookup blocked? Paste the data instead</summary>
+      <div class="hint">Open each address in your browser, copy everything, paste it here and press Add. Do both.</div>
+      <div id="rmurls" class="hint mono"></div>
+      <textarea id="rmtext" rows="3" spellcheck="false"></textarea>
+      <button id="rmadd">Add</button>
+    </details>
+  </div>
+
+  <h2>Item library</h2>
+  <div id="libstatus" class="hint"></div>
+  <div class="btns">
+    <button id="libexport">Export</button>
+    <button id="libimport">Import</button>
+    <button id="libclear">Forget everything</button>
+    <input type="file" id="libfile" accept=".json,application/json" style="display:none">
+  </div>
+  <div class="hint">Export makes a file you can back up or give to someone else, so they start with your items already known.</div>
+
+  <div class="btns" style="margin-top:10px"><button id="closesettings">Done</button></div>
+</section>
+
+<footer>
+  <div class="dbgrow"><a href="#" id="dbg">reader debug</a> <span id="version"></span></div>
+  <pre id="dbgout" style="display:none"></pre>
+</footer>
+
+<script src="./vendor/a1lib.js?v=0.1.0"></script>
+<script src="./vendor/ocr.js?v=0.1.0"></script>
+<script src="./vendor/tooltip.js?v=0.1.0"></script>
+<script src="./src/reader.js?v=0.1.0"></script>
+<script src="./src/library.js?v=0.1.0"></script>
+<script src="./src/data.js?v=0.1.0"></script>
+<script src="./src/kinds.js?v=0.1.0"></script>
+<script src="./src/verdict.js?v=0.1.0"></script>
+<script src="./src/runemetrics.js?v=0.1.0"></script>
+<script src="./src/app.js?v=0.1.0"></script>
+</body>
+</html>
