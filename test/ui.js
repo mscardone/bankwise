@@ -19,11 +19,12 @@ const { spawn } = require('child_process'); const path = require('path'), fs = r
   });
   await ctx.route('**/runemetrics/profile/profile**', r => r.fulfill({ json: { name: 'Tester', skillvalues: [{ id: 11, level: 99 }, { id: 9, level: 99 }, { id: 22, level: 99 }, { id: 8, level: 99 }] }, headers: { 'access-control-allow-origin': '*' } }));
   await ctx.route('**/runemetrics/quests**', r => r.fulfill({ json: { quests: [{ title: 'While Guthix Sleeps', status: 'COMPLETED' }] }, headers: { 'access-control-allow-origin': '*' } }));
-  await page.addInitScript(() => {
+  const alt1Init = () => {
     window.__ov = []; const rec = n => (...a) => { window.__ov.push([n, ...a]); return true; };
     window.alt1 = { permissionPixel: true, permissionOverlay: true, permissionGameState: true, rsLinked: true, rsWidth: 2560, rsHeight: 1351, mousePosition: -1, identifyAppUrl() { },
       overLaySetGroup: rec('group'), overLayFreezeGroup: rec('freeze'), overLayClearGroup: rec('clear'), overLayRefreshGroup: rec('refresh'), overLayRect: rec('rect'), overLayLine: rec('line'), overLayTextEx: rec('text'), overLayText: rec('text') };
-  });
+  };
+  await page.addInitScript(alt1Init);
   await page.goto('http://127.0.0.1:8378/index.html');
   const b64 = fs.readFileSync(path.join(__dirname, 'synth-native-main.png')).toString('base64');
   await page.evaluate(async (b64) => {
@@ -32,8 +33,8 @@ const { spawn } = require('child_process'); const path = require('path'), fs = r
     const d = cx.getImageData(0, 0, cv.width, cv.height); const id = new A1lib.ImageData(cv.width, cv.height); id.data.set(d.data);
     window.__ref = new A1lib.ImgRefData(id, 0, 0); Reader._capture = () => window.__ref;
     // the game's tooltip: whatever the test says the hovered item is called
-    window.__tip = ''; const TR = window.Tooltip.default || window.Tooltip;
-    TR.read = () => window.__tip ? { area: { x: 0, y: 0, width: 1, height: 1 }, readBankItem: () => window.__tip } : null;
+    window.__tip = '';
+    window.TipReader.read = () => window.__tip ? { area: { x: 0, y: 0, width: 1, height: 1 }, text: window.__tip, font: 'test' } : null;
   }, b64);
   await page.waitForTimeout(1700);
   let v = await page.evaluate(() => ({ n: Bankwise._view() && Bankwise._view().slots.length, pitch: Bankwise._view() && Bankwise._view().grid.pitch, status: document.getElementById('status').textContent }));
@@ -45,10 +46,10 @@ const { spawn } = require('child_process'); const path = require('path'), fs = r
   // hover three items, the "game" names them
   const hover = async (i, tip) => { await page.evaluate(([i, tip]) => { const s = Bankwise._view().slots[i]; window.alt1.mousePosition = ((s.x + 20) << 16) + (s.y + 20); window.__tip = tip; }, [i, tip]); await page.waitForTimeout(900); };
   const idx = await page.evaluate(() => { const s = Bankwise._view().slots, last = Math.max(...s.map(q => q.section)); const t4 = s.filter(q => q.section === last); const at = (r, c) => s.indexOf(t4.filter(q => q.col === c)[r]); return { logs: at(1, 9), a: at(0, 1), b: at(0, 3) }; });
-  await hover(idx.logs, 'Withdraw-1 Magic logs');
-  await hover(idx.a, 'Withdraw-1 Santa hat');
-  await hover(idx.b, 'Withdraw-1 Commorb');
-  await hover(idx.b, 'Withdraw-1 Commorb');
+  await hover(idx.logs, 'Magic logs');
+  await hover(idx.a, 'Santa hat');
+  await hover(idx.b, 'Commorb');
+  await hover(idx.b, 'Commorb');
   await page.evaluate(() => { window.alt1.mousePosition = -1; window.__tip = ''; }); await page.waitForTimeout(1500);
   const names = await page.evaluate(() => Bankwise._lib().names());
   ok('learns items from the tooltip: ' + names.join(', '), names.length === 3 && names.includes('Magic logs') && names.includes('Santa hat'), JSON.stringify(names));
@@ -81,6 +82,23 @@ const { spawn } = require('child_process'); const path = require('path'), fs = r
   const kept = await page.evaluate(() => ({ lib: Bankwise._lib().names().length, s: Bankwise._settings }));
   ok('library and settings survive a reload', kept.lib === 3 && kept.s.useQuests && kept.s.template === 'granular', JSON.stringify(kept));
   ok('no page errors', errs.length === 0, errs.join(' | '));
+
+  // the real thing: Scott's Alt1 capture with the game's tooltip showing, read by the real tooltip reader
+  const p4 = await ctx.newPage(); const e4 = []; p4.on('pageerror', e => e4.push(e.message)); await p4.addInitScript(alt1Init);
+  await p4.goto('http://127.0.0.1:8378/index.html');
+  await p4.evaluate(() => { localStorage.clear(); }); await p4.reload();
+  const hb64 = fs.readFileSync(path.join(__dirname, 'capture-hover.png')).toString('base64');
+  await p4.evaluate(async (b64) => {
+    const img = new Image(); img.src = 'data:image/png;base64,' + b64; await img.decode();
+    const cv = document.createElement('canvas'); cv.width = img.width; cv.height = img.height; const cx = cv.getContext('2d'); cx.drawImage(img, 0, 0);
+    const d = cx.getImageData(0, 0, cv.width, cv.height); const id = new A1lib.ImageData(cv.width, cv.height); id.data.set(d.data);
+    window.__ref = new A1lib.ImgRefData(id, 0, 0); Reader._capture = () => window.__ref; Reader.reset();
+    window.alt1.mousePosition = (705 << 16) + 342;
+  }, hb64);
+  await p4.waitForTimeout(2500);
+  const learned = await p4.evaluate(() => Bankwise._lib().names());
+  ok('real capture + real tooltip reader in the browser: learned ' + JSON.stringify(learned), learned.length === 1 && learned[0] === 'Fremennik blade' && e4.length === 0, e4.join(' | '));
+  await p4.screenshot({ path: path.join(__dirname, '../docs/ui-real-hover.png') });
 
   // plain browser, no Alt1
   const p2 = await ctx.newPage(); const e2 = []; p2.on('pageerror', e => e2.push(e.message));

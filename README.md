@@ -8,9 +8,9 @@ An [Alt1 Toolkit](https://runeapps.org/alt1) app for RuneScape 3 that reads your
 
 It only reads the screen and draws markers. It never clicks, types or moves anything in the game.
 
-> **Status: v0.1.0, first build, not yet run against the live game.** The reader and the item
-> matching are tested on real screenshots of a bank; the tooltip reading, the wiki lookups and
-> the RuneMetrics lookup have only run against stand-ins. See "Not proven yet" below.
+> **Status: v0.2.0.** Bank reading, item matching and tooltip reading are tested on real Alt1
+> captures (items match pixel-for-pixel between captures). The wiki lookups and the RuneMetrics
+> lookup have not worked live yet. See "Not proven yet" below.
 
 ## Install
 
@@ -47,12 +47,14 @@ The app needs the **pixel**, **overlay** and **game state** permissions (game st
 - `src/reader.js` finds the bank by its flat background colour, splits it from neighbouring panels at solid walls, and fits the slot lattice from the periodic columns of items - so it works at any interface scale and any bank-window size, in a single tab or the all-tabs view with its "Tab N" dividers. Each slot is cut below the stack number and area-averaged to a 24x16 patch.
 - `src/library.js` stores learned patches (about 1.5 KB per item, in localStorage) and matches a slot by its **worst** 3x3 block, tried at small pixel offsets. Worst-block matters: two potions differ only in the colour of a small blob of liquid, which an average would wash out.
 - `src/data.js` fetches the wiki's Grand Exchange dump once a day and each item's wiki categories the first time it is seen. `src/kinds.js` turns name + categories into one of 28 kinds and maps kinds to tabs. `src/verdict.js` is the keep/sell/destroy rule list. `src/runemetrics.js` is the optional profile lookup.
-- `vendor/` holds the official Alt1 libraries (`a1lib`, `ocr`, `tooltip`) from the `alt1` npm package, unmodified. No build step.
+- `src/tooltip.js` finds the game's tooltip (since the 2026 interface it is a very dark brown box, not the pure black one Alt1's stock finder looks for), climbs to its top panel and reads the item name, which the game draws in its own colour, with Alt1's chat fonts (12-18pt tried; 14pt is the one at default scale).
+- `src/reader.js` also keeps the slot lattice steady between reads: a tooltip hides whole rows and nudges the fit by a pixel, so rows and columns are carried over from the previous read while most of them still line up.
+- `vendor/` holds the official Alt1 libraries (`a1lib`, `ocr`, four chat fonts) from the `alt1` npm package, unmodified. No build step.
 
 ## Not proven yet
 
-1. **A real Alt1 capture.** The test images are Windows snips at 125% display scaling plus the same snips shrunk to native size inside a fake full-size capture. Alt1's own capture is the thing that counts: open the bank, press *reader debug*, download the capture and add it to `test/`.
-2. **Tooltip reading** uses Alt1's stock `TooltipReader.readBankItem()`. Whether it still reads RS3's bank tooltips after the 2026 interface overhaul is unknown. The debug panel shows the raw text it read.
+1. **Other interface scales and long item names.** Tested at the default scale only; a name that wraps onto a second tooltip line is read as its first line.
+2. **Different items that share one icon** (three in the test bank) can never be told apart by looks: they stay amber and the card says "X or Y".
 3. **Wiki answers.** The price file's field names and the category names the rules look for (`Reclaimable from Diango`, `Quest items`, a category named after the quest) are from memory of the wiki, not from a checked response. The debug panel shows what each source last said.
 4. **RuneMetrics from inside Alt1** - may be blocked cross-origin; JSONP and paste are the fallbacks.
 

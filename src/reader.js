@@ -209,11 +209,30 @@
   }
 
   /* offX/offY: where this buffer sits in the full capture (slots are reported in capture coordinates) */
-  function readBuffer(buf, whole, offX, offY) {
+  /* Keep the lattice steady from one read to the next.  The fit comes from whatever items are
+     visible, so a tooltip drawn over the bank nudges it by a pixel and hides whole rows; when
+     most rows still line up with the previous read (the bank has not scrolled), reuse its
+     columns and row positions, and keep the rows that are merely hidden behind the tooltip
+     (band = its vertical extent).  prev and band are in this buffer's coordinates. */
+  function stabilise(grid, prev, band) {
+    if (!prev || Math.abs(prev.pitch - grid.pitch) > 0.01 || prev.cols.length !== grid.cols.length || Math.abs(prev.cols[0] - grid.cols[0]) > 2.5) return grid;
+    var hit = 0, used = [];
+    grid.rows.forEach(function (r) { for (var i = 0; i < prev.rows.length; i++) if (Math.abs(prev.rows[i].y - r.y) <= 2.5) { r.match = i; hit++; break; } });
+    if (hit < Math.max(1, grid.rows.length / 2)) { grid.rows.forEach(function (r) { delete r.match; }); return grid; }
+    grid.cols = prev.cols.slice();
+    grid.rows.forEach(function (r) { if (r.match !== undefined) { used[r.match] = 1; r.y = prev.rows[r.match].y; r.section = prev.rows[r.match].section; delete r.match; } else r.section += 1000; });
+    if (band) prev.rows.forEach(function (q, i) { if (!used[i] && !q.clipped && q.y + grid.pitch / 2 > band.y0 && q.y - grid.pitch / 2 < band.y1) grid.rows.push({ y: q.y, section: q.section, clipped: false, carried: true }); });
+    grid.rows.sort(function (a, b) { return a.y - b.y; });
+    return grid;
+  }
+
+  function readBuffer(buf, whole, offX, offY, prev, band) {
     var areas = whole ? [{ x: 0, y: 0, w: buf.width, h: buf.height }] : findAreas(buf), grid = null, i;
     offX = offX || 0; offY = offY || 0;
     for (i = 0; i < areas.length && i < 4 && !grid; i++) grid = fitGrid(buf, areas[i]);
     if (!grid) return { error: areas.length ? "no-grid" : "no-bank", areas: areas.length };
+    if (prev) grid = stabilise(grid, { pitch: prev.pitch, cols: prev.cols.map(function (v) { return v - offX; }), rows: prev.rows.map(function (q) { return { y: q.y - offY, section: q.section, clipped: q.clipped }; }) },
+      band ? { y0: band.y0 - offY, y1: band.y1 - offY } : null);
     var slots = [], r, c;
     for (r = 0; r < grid.rows.length; r++) {
       if (grid.rows[r].clipped) continue;
@@ -226,7 +245,7 @@
     }
     /* report the grid in capture coordinates too (the closures above keep the buffer's own) */
     var g = { pitch: grid.pitch, residual: grid.residual, x: grid.x + offX, y: grid.y + offY, w: grid.w, h: grid.h,
-      cols: grid.cols.map(function (v) { return v + offX; }), rows: grid.rows.map(function (q) { return { y: q.y + offY, section: q.section, clipped: q.clipped }; }) };
+      cols: grid.cols.map(function (v) { return v + offX; }), rows: grid.rows.map(function (q) { return { y: q.y + offY, section: q.section, clipped: q.clipped, carried: q.carried }; }) };
     return { grid: g, slots: slots, off: { x: offX, y: offY } };
   }
 
@@ -234,7 +253,7 @@
      (plus a margin, so resizing or moving it a little is followed) is read; if that stops
      looking like a bank the whole capture is searched again. */
   var lastArea = null, misses = 0;
-  function read() {
+  function read(prev, band) {
     if (!window.alt1) return { error: "no-alt1" };
     if (!alt1.permissionPixel) return { error: "no-permission" };
     if (!alt1.rsLinked) return { error: "no-rs" };
@@ -243,17 +262,19 @@
     if (lastArea) {
       var m = 48, x = Math.max(0, lastArea.x - m), y = Math.max(0, lastArea.y - m), w = Math.min(img.width - x, lastArea.w + 2 * m), h = Math.min(img.height - y, lastArea.h + 2 * m);
       buf = img.toData(img.x + x, img.y + y, w, h);
-      r = readBuffer(buf, true, x, y);
+      r = readBuffer(buf, true, x, y, prev, band);
       if (r.error) { r = null; lastArea = null; }                 /* moved, resized or closed: look everywhere */
     }
     if (!r) {
       buf = img.toData(img.x, img.y, img.width, img.height);
-      r = readBuffer(buf, false, 0, 0);
+      r = readBuffer(buf, false, 0, 0, prev, band);
     }
     if (!r.error) { lastArea = { x: r.grid.x, y: r.grid.y, w: r.grid.w, h: r.grid.h }; misses = 0; }
     r.img = img; r.buf = buf; r.captureSize = img.width + "x" + img.height;
     return r;
   }
+  /* a piece of the game as a plain buffer (capture coordinates) */
+  function grab(x, y, w, h) { var img = api._capture(); return img ? img.toData(img.x + x, img.y + y, w, h) : null; }
   function fullCapture() { var img = api._capture(); return img ? img.toData(img.x, img.y, img.width, img.height) : null; }
   function slotImage(buf, s, off) {
     off = off || { x: 0, y: 0 };
@@ -272,7 +293,7 @@
   var api = {
     _capture: function () { return A1lib.captureHoldFullRs(); }, /* tests swap this out */
     PW: PW, PH: PH, BG: BG,
-    findAreas: findAreas, fitGrid: fitGrid, readBuffer: readBuffer, read: read, fullCapture: fullCapture, reset: function () { lastArea = null; misses = 0; }, patch: patch, ink: ink, slotRect: slotRect, slotImage: slotImage, resample: resample
+    findAreas: findAreas, fitGrid: fitGrid, readBuffer: readBuffer, read: read, grab: grab, fullCapture: fullCapture, reset: function () { lastArea = null; misses = 0; }, patch: patch, ink: ink, slotRect: slotRect, slotImage: slotImage, resample: resample
   };
   return api;
 });

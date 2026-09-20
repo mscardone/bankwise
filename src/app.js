@@ -2,8 +2,8 @@
    draws value/verdict markers over the game and explains each verdict. */
 (function () {
   "use strict";
-  var VERSION = "0.1.1";
-  var READ_MS = 700, HOVER_MS = 180, OVERLAY_MS = 5000, OVERLAY_GROUP = "bankwise";
+  var VERSION = "0.2.1";
+  var READ_MS = 700, HOVER_MS = 250, OVERLAY_MS = 5000, OVERLAY_GROUP = "bankwise";
   function $(id) { return document.getElementById(id); }
   var store = {
     get: function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
@@ -16,13 +16,14 @@
   for (k in DEFAULTS) if (settings[k] === undefined) settings[k] = DEFAULTS[k];
   var profile = loadJSON("bankwise.profile.v1", null);
   var lib = Library.fromJSON(loadJSON("bankwise.library.v1", null)), libVersion = 1, libSaveTimer = null, libSaveFailed = false;
-  var TooltipReader = window.Tooltip && (window.Tooltip.default || window.Tooltip);
+
+  var nameColours = loadJSON("bankwise.namecolours.v1", {}), tipColour = null;   /* the colour the game draws each item's name in - it means something, not yet known what */
 
   var view = null;              /* last successful read: {grid, slots, buf} with identities on the slots */
   var idCache = {}, idCacheVersion = 0;
   var clean = {};               /* position -> the slot as seen while the mouse was elsewhere (what gets taught) */
   var shown = null;             /* what the detail card shows: {slot} from the bank or {name} from the list */
-  var hoverSlot = null, tipName = "", tipCount = 0, tipRaw = "", tipArea = null, lastTaught = "";
+  var hoverSlot = null, tipName = "", tipCount = 0, tipRaw = "", tipArea = null, tipWhy = "", lastTaught = "";
   var filter = "all", overlaySig = "", overlayAt = 0, lastError = "";
 
   function saveSettings() { store.set("bankwise.settings.v1", JSON.stringify(settings)); }
@@ -110,7 +111,7 @@
   function mousePos() { try { return window.alt1 ? A1lib.getMousePosition() : null; } catch (e) { return null; } }
   function tick() {
     var r;
-    try { r = Reader.read(); } catch (e) { r = { error: "crash", message: String(e && e.message || e) }; }
+    try { r = Reader.read(view ? view.grid : null, tipArea ? { y0: tipArea.y, y1: tipArea.y + tipArea.height } : null); } catch (e) { r = { error: "crash", message: String(e && e.message || e) }; }
     if (r.error) {
       lastError = r.error;
       if (view) { view = null; hoverSlot = null; clearOverlay(); render(); }
@@ -131,8 +132,19 @@
     s = s.replace(/\s*\/\s*\d+ more options?.*$/i, "").replace(/^[^A-Za-z0-9'(]+|[^A-Za-z0-9')+]+$/g, "");
     return s;
   }
+  /* the tooltip near the mouse, in capture coordinates: {area, text, why} or null */
+  function readTip(m) {
+    var W = alt1.rsWidth || 0, H = alt1.rsHeight || 0, x = Math.max(0, m.x - 460), y = Math.max(0, m.y - 420);
+    var w = Math.min((W || m.x + 460) - x, m.x + 460 - x), h = Math.min((H || m.y + 420) - y, m.y + 420 - y);
+    var buf = Reader.grab(x, y, w, h);
+    if (!buf) return null;
+    var tip = TipReader.read(buf, m.x - x, m.y - y);
+    if (!tip) return null;
+    var a = tip.area.whole || tip.area;
+    return { area: { x: a.x + x, y: a.y + y, width: a.width, height: a.height }, text: tip.text, why: tip.why, colours: tip.colours, font: tip.font, colour: tip.colour };
+  }
   function hoverTick() {
-    if (!view || !TooltipReader || !window.alt1) return;
+    if (!view || !window.TipReader || !window.alt1) return;
     var m = mousePos(), slot = null;
     if (m) view.slots.forEach(function (s) { if (m.x >= s.x && m.x < s.x + s.w && m.y >= s.y && m.y < s.y + s.h) slot = s; });
     if (!slot) { if (hoverSlot) { hoverSlot = null; tipCount = 0; tipArea = null; } return; }
@@ -140,18 +152,21 @@
     hoverSlot = slot; shown = { slot: slot };
     var name = "";
     try {
-      var tip = TooltipReader.read();
+      var tip = readTip(m);
       tipArea = tip ? tip.area : null;
-      if (tip) { tipRaw = tip.readBankItem() || ""; name = cleanName(tipRaw); }
-    } catch (e) { tipRaw = "(tooltip reader: " + (e && e.message || e) + ")"; }
+      if (tip) { tipColour = tip.colour || null; tipRaw = tip.text || ""; tipWhy = tip.text ? "read with the " + tip.font + " font, name colour " + (tip.colour || []).join(",") : (tip.why || "") + (tip.colours ? "; brightest colours on the line: " + tip.colours.join("  ") : ""); name = cleanName(tipRaw); }
+      else tipWhy = "no tooltip box found near the mouse";
+    } catch (e) { tipWhy = "tooltip reader crashed: " + (e && e.message || e); }
     if (name.length >= 3 && name === tipName) tipCount++; else { tipName = name; tipCount = name ? 1 : 0; }
-    if (tipCount === 2) teach(slot, name);
+    if (tipCount === 2) { if (tipColour) { nameColours[name] = tipColour; store.set("bankwise.namecolours.v1", JSON.stringify(nameColours)); } teach(slot, name); }
     renderCard();
   }
   function teach(slot, name, force) {
     var src = clean[posKey(slot)] || slot;
     if (!force && slot.id.state === "known" && slot.id.name === name) return;
-    if (slot.id.name && slot.id.name !== name && slot.id.state !== "unknown") lib.unlearn(slot.id.name, src.patch);
+    /* only a correction typed by the player removes what was there: two different items can share
+       one identical icon, and the tooltip naming one of them must not make the app forget the other */
+    if (force && slot.id.name && slot.id.name !== name && slot.id.state !== "unknown") lib.unlearn(slot.id.name, src.patch);
     if (lib.add(name, src.patch, "taught", src.shifts) || force) { libVersion++; lastTaught = name; saveLibrary(); Data.factsFor(name); overlaySig = ""; }
   }
 
@@ -192,6 +207,7 @@
     $("hicon").style.backgroundImage = "url(" + slotImg(s) + ")";
     $("hfix").style.visibility = ""; $("hpins").style.display = settings.useOverrides ? "" : "none";
     if (s.id.state !== "known") {
+      $("hname").style.color = "";
       $("hname").textContent = s.id.state === "unsure" ? s.id.name + "?" : "Unknown item";
       $("hprice").innerHTML = hoverSlot === s ? (tipName ? "reading: <b>" + esc(tipName) + "</b>" : "keep the mouse still until the game shows its name") : "&nbsp;";
       $("hverdict").innerHTML = '<span class="chip ' + (s.id.state === "unsure" ? "unsure" : "teach") + '">' + (s.id.state === "unsure" ? "unsure" : "new") + "</span>" + (s.id.state === "unsure" ? "Looks like " + esc(s.id.name) + (s.id.rival ? " or " + esc(s.id.rival) : "") + ". Hover it in the bank to confirm." : "Hover it in the bank and I will remember it from then on.");
@@ -200,6 +216,7 @@
     }
     var it = info(s.id.name);
     $("hname").textContent = it.name;
+    $("hname").style.color = nameColours[it.name] ? "rgb(" + nameColours[it.name].join(",") + ")" : "";
     $("hprice").innerHTML = it.price !== null ? "<b>" + Verdict.gp(it.price) + "</b> each" + (it.alch ? " &middot; alch " + Verdict.gp(it.alch) : "") : (it.tradeable === false ? "not tradeable" : "price not loaded");
     $("hverdict").innerHTML = '<span class="chip ' + it.verdict.id + '">' + it.verdict.id + "</span>" + esc(it.verdict.reason);
     $("htab").innerHTML = "Belongs in <b>tab " + it.tab.number + " &middot; " + esc(it.tab.name) + "</b> <span title='" + esc(it.cats.slice(0, 12).join(", ")) + "'>(" + esc(Kinds.KIND_LABEL[it.kind]) + ")</span>";
@@ -303,7 +320,7 @@
     if (out.style.display !== "none") { out.style.display = "none"; return; }
     var lines = ["Bankwise " + VERSION];
     lines.push("alt1: " + !!window.alt1 + (window.alt1 ? "  pixel: " + !!alt1.permissionPixel + "  overlay: " + !!alt1.permissionOverlay + "  rsLinked: " + !!alt1.rsLinked : ""));
-    lines.push("tooltip reader: " + (TooltipReader ? "loaded" : "MISSING") + "   last raw tooltip: " + JSON.stringify(tipRaw) + "   -> " + JSON.stringify(tipName) + "   last taught: " + JSON.stringify(lastTaught));
+    lines.push("tooltip reader: " + (window.TipReader && window.OCR && window.Alt1Fonts ? "loaded" : "MISSING") + "   last read: " + JSON.stringify(tipRaw) + " (" + tipWhy + ")   last taught: " + JSON.stringify(lastTaught));
     lines.push("prices: " + Data.status.prices); lines.push("wiki facts: " + Data.status.facts); if (Data.status.lastError) lines.push("last data error: " + Data.status.lastError);
     lines.push("library: " + lib.names().length + " items, " + lib.samples.length + " samples" + (libSaveFailed ? "  SAVE FAILED" : ""));
     var r = null;
@@ -350,9 +367,9 @@
       try { full = Reader.fullCapture(); } catch (e) { lines.push("capture failed: " + e.message); }
       lines.push("mouse: " + (m ? m.x + "," + m.y : "not over the game"));
       try {
-        var tip = TooltipReader && TooltipReader.read();
-        lines.push("stock tooltip finder: " + (tip ? "box at " + JSON.stringify(tip.area) + "  text: " + JSON.stringify(tip.readBankItem()) : "found nothing"));
-      } catch (e2) { lines.push("stock tooltip finder crashed: " + e2.message); }
+        var tip = m ? readTip(m) : null;
+        lines.push("tooltip: " + (tip ? "box at " + JSON.stringify(tip.area) + "  name: " + JSON.stringify(tip.text) + (tip.text ? "  (" + tip.font + ")" : "  " + tip.why + "  colours: " + (tip.colours || []).join("  ")) : "no box found"));
+      } catch (e2) { lines.push("tooltip reader crashed: " + e2.message); }
       if (full && m) {
         var px = [], dy;
         for (dy = 10; dy <= 60; dy += 10) { var q = ((m.y + dy) * full.width + m.x) * 4; px.push("+" + dy + ":" + full.data[q] + "," + full.data[q + 1] + "," + full.data[q + 2]); }
