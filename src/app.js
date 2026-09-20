@@ -2,7 +2,7 @@
    draws value/verdict markers over the game and explains each verdict. */
 (function () {
   "use strict";
-  var VERSION = "0.1.0";
+  var VERSION = "0.1.1";
   var READ_MS = 700, HOVER_MS = 180, OVERLAY_MS = 5000, OVERLAY_GROUP = "bankwise";
   function $(id) { return document.getElementById(id); }
   var store = {
@@ -329,8 +329,44 @@
         out.appendChild(a);
       } catch (err2) { out.appendChild(document.createTextNode("(capture export failed: " + err2.message + ")")); }
     }
+    var tools = document.createElement("div");
+    tools.innerHTML = '\n<a href="#" id="dbgdelay">Capture in 4 seconds (go and hover a bank item, keep still)</a>\n<a href="#" id="dbgdata">Test the wiki data sources</a>\n';
+    out.appendChild(tools);
+    $("dbgdelay").addEventListener("click", function (ev) { ev.preventDefault(); delayedCapture(out); });
+    $("dbgdata").addEventListener("click", function (ev) {
+      ev.preventDefault(); var pre = document.createElement("div"); pre.textContent = "testing..."; out.appendChild(pre);
+      Data.selfTest().then(function (res) { pre.textContent = res.join("\n"); });
+    });
     out.style.display = "";
   });
+  /* the tooltip only exists while the mouse is on the item, so the capture has to take itself */
+  function delayedCapture(out) {
+    var note = document.createElement("div"); out.appendChild(note);
+    var left = 4, t = setInterval(function () {
+      note.textContent = "capturing in " + left + "...";
+      if (left-- > 0) return;
+      clearInterval(t);
+      var lines = [], m = mousePos(), full = null;
+      try { full = Reader.fullCapture(); } catch (e) { lines.push("capture failed: " + e.message); }
+      lines.push("mouse: " + (m ? m.x + "," + m.y : "not over the game"));
+      try {
+        var tip = TooltipReader && TooltipReader.read();
+        lines.push("stock tooltip finder: " + (tip ? "box at " + JSON.stringify(tip.area) + "  text: " + JSON.stringify(tip.readBankItem()) : "found nothing"));
+      } catch (e2) { lines.push("stock tooltip finder crashed: " + e2.message); }
+      if (full && m) {
+        var px = [], dy;
+        for (dy = 10; dy <= 60; dy += 10) { var q = ((m.y + dy) * full.width + m.x) * 4; px.push("+" + dy + ":" + full.data[q] + "," + full.data[q + 1] + "," + full.data[q + 2]); }
+        lines.push("pixels below the mouse: " + px.join("  "));
+      }
+      note.textContent = lines.join("\n") + "\n";
+      if (full) {
+        var cv = document.createElement("canvas"); cv.width = full.width; cv.height = full.height;
+        var id = cv.getContext("2d").createImageData(full.width, full.height); id.data.set(full.data); cv.getContext("2d").putImageData(id, 0, 0);
+        var a = document.createElement("a"); a.href = cv.toDataURL("image/png"); a.download = "bankwise-hover-capture.png"; a.textContent = "Download the hover capture (PNG)";
+        note.appendChild(a);
+      }
+    }, 1000);
+  }
 
   /* ---------- start ---------- */
   $("version").textContent = "v" + VERSION;
