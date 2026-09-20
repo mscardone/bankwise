@@ -100,6 +100,22 @@ const { spawn } = require('child_process'); const path = require('path'), fs = r
   ok('real capture + real tooltip reader in the browser: learned ' + JSON.stringify(learned), learned.length === 1 && learned[0] === 'Fremennik blade' && e4.length === 0, e4.join(' | '));
   await p4.screenshot({ path: path.join(__dirname, '../docs/ui-real-hover.png') });
 
+  // Scott's complaint: nothing learned while the mouse stays on the item.  Plain capture first, then the hover one.
+  const p5 = await ctx.newPage(); const e5 = []; p5.on('pageerror', e => e5.push(e.message)); await p5.addInitScript(alt1Init);
+  await p5.goto('http://127.0.0.1:8378/index.html'); await p5.evaluate(() => { localStorage.clear(); }); await p5.reload();
+  const setCap = async (pg, file, mouse) => pg.evaluate(async ([b64, mouse]) => {
+    const img = new Image(); img.src = 'data:image/png;base64,' + b64; await img.decode();
+    const cv = document.createElement('canvas'); cv.width = img.width; cv.height = img.height; const cx = cv.getContext('2d'); cx.drawImage(img, 0, 0);
+    const d = cx.getImageData(0, 0, cv.width, cv.height); const id = new A1lib.ImageData(cv.width, cv.height); id.data.set(d.data);
+    window.__ref = new A1lib.ImgRefData(id, 0, 0); Reader._capture = () => window.__ref; window.alt1.mousePosition = mouse;
+  }, [fs.readFileSync(path.join(__dirname, file)).toString('base64'), mouse]);
+  await setCap(p5, 'capture-plain.png', -1); await p5.waitForTimeout(1600);
+  await setCap(p5, 'capture-hover-white.png', (694 << 16) + 540); await p5.waitForTimeout(2600);
+  const st = await p5.evaluate(() => { const v = Bankwise._view(); const s = v && v.slots.filter(q => 694 >= q.x && 694 < q.x + q.w && 540 >= q.y && 540 < q.y + q.h)[0]; return { names: Bankwise._lib().names(), hovered: s && s.id, n: v && v.slots.length, card: document.getElementById('hname').textContent, status: document.getElementById('status').textContent }; });
+  ok('mouse kept on a free-to-play item: learned ' + JSON.stringify(st.names) + ', card says "' + st.card + '", ' + st.n + ' items still on screen', st.names.length === 1 && st.names[0] === 'Nature rune' && st.hovered && st.hovered.state === 'known' && st.card === 'Nature rune' && st.n === 193 && e5.length === 0, JSON.stringify(st) + e5.join('|'));
+  await p5.uncheck('#teach'); await p5.evaluate(() => { Bankwise._lib().forget('Nature rune'); }); await p5.waitForTimeout(1500);
+  ok('teach switched off: hovering learns nothing', (await p5.evaluate(() => Bankwise._lib().names().length)) === 0);
+
   // plain browser, no Alt1
   const p2 = await ctx.newPage(); const e2 = []; p2.on('pageerror', e => e2.push(e.message));
   await p2.addInitScript(() => { delete window.alt1; });

@@ -5,11 +5,12 @@
 <title>Bankwise</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="icon" href="./icon.png">
-<link rel="stylesheet" href="./style.css?v=0.2.1">
+<link rel="stylesheet" href="./style.css?v=0.3.0">
 </head>
 <body>
 <header>
   <h1>Bankwise</h1>
+  <label class="toggle" title="Learn and correct items from the game's tooltip while you hover them"><input type="checkbox" id="teach" checked> teach</label>
   <label class="toggle" title="Draw markers on top of the bank"><input type="checkbox" id="overlay" checked> overlay</label>
   <button id="opensettings" title="Layout template, advice options, item library">Settings</button>
 </header>
@@ -35,7 +36,7 @@
       <button data-pin="">Clear pin</button>
     </div>
     <div id="hfix">
-      <a href="#" id="rename">wrong name?</a>
+      <a href="#" id="rename">type the name yourself</a>
       <span id="renamebox" style="display:none"><input id="renameinput" type="text" spellcheck="false" placeholder="exact item name"> <button id="renameok">Save</button></span>
     </div>
   </div>
@@ -91,7 +92,7 @@
     <button id="libclear">Forget everything</button>
     <input type="file" id="libfile" accept=".json,application/json" style="display:none">
   </div>
-  <div class="hint">Export makes a file you can back up or give to someone else, so they start with your items already known.</div>
+  <div class="hint">Export makes a file you can back up or give to someone else. Saved in the app's folder as data/seed-library.json, it becomes the starter library every new user begins with.</div>
 
   <div class="btns" style="margin-top:10px"><button id="closesettings">Done</button></div>
 </section>
@@ -101,19 +102,19 @@
   <pre id="dbgout" style="display:none"></pre>
 </footer>
 
-<script src="./vendor/a1lib.js?v=0.2.1"></script>
-<script src="./vendor/ocr.js?v=0.2.1"></script>
-<script src="./vendor/font-chat-12pt.js?v=0.2.1"></script>
-<script src="./vendor/font-chat-14pt.js?v=0.2.1"></script>
-<script src="./vendor/font-chat-16pt.js?v=0.2.1"></script>
-<script src="./vendor/font-chat-18pt.js?v=0.2.1"></script>
-<script src="./src/reader.js?v=0.2.1"></script>
-<script src="./src/tooltip.js?v=0.2.1"></script>
-<script src="./src/library.js?v=0.2.1"></script>
-<script src="./src/data.js?v=0.2.1"></script>
-<script src="./src/kinds.js?v=0.2.1"></script>
-<script src="./src/verdict.js?v=0.2.1"></script>
-<script src="./src/runemetrics.js?v=0.2.1"></script>
-<script src="./src/app.js?v=0.2.1"></script>
+<script src="./vendor/a1lib.js?v=0.3.0"></script>
+<script src="./vendor/ocr.js?v=0.3.0"></script>
+<script src="./vendor/font-chat-12pt.js?v=0.3.0"></script>
+<script src="./vendor/font-chat-14pt.js?v=0.3.0"></script>
+<script src="./vendor/font-chat-16pt.js?v=0.3.0"></script>
+<script src="./vendor/font-chat-18pt.js?v=0.3.0"></script>
+<script src="./src/reader.js?v=0.3.0"></script>
+<script src="./src/tooltip.js?v=0.3.0"></script>
+<script src="./src/library.js?v=0.3.0"></script>
+<script src="./src/data.js?v=0.3.0"></script>
+<script src="./src/kinds.js?v=0.3.0"></script>
+<script src="./src/verdict.js?v=0.3.0"></script>
+<script src="./src/runemetrics.js?v=0.3.0"></script>
+<script src="./src/app.js?v=0.3.0"></script>
 </body>
 </html>

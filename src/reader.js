@@ -83,10 +83,45 @@
     for (x = 0; x < aw; x++) open.push(colFill[x] < 0.9 ? 1 : 0);
     var segs = runs(open, 0).filter(function (s) { return s.n >= 100; });
     if (!segs.length) return null;
+    /* a tooltip drawn over the bank is not bank content: blank it out of the mask (after the walls
+       are found - a tooltip hanging over the bank's edge must not open a gap in the wall), or it merges
+       columns and rows and the lattice cannot be fitted (it broke 79 of 200 hover positions) */
+    var tips = darkBoxes(buf, area);
+    tips.forEach(function (t) {
+      var x0 = Math.max(0, t.x - ax - 3), x1 = Math.min(aw - 1, t.x - ax + t.w + 2), y0 = Math.max(0, t.y - ay - 3), y1 = Math.min(ah - 1, t.y - ay + t.h + 2);
+      for (y = y0; y <= y1; y++) for (x = x0; x <= x1; x++) m[y * aw + x] = 0;
+    });
     segs.sort(function (p, q) { return q.n - p.n; });
     var best = null;
     for (i = 0; i < segs.length && i < 3 && !best; i++) best = fitSegment(buf, m, area, segs[i]);
+    if (best) best.tips = tips;
     return best;
+  }
+
+  /* solid very dark boxes (the game's tooltip panels) inside an area, in buffer coordinates */
+  var TIP = [15, 14, 12], TIP_TOL = 8;
+  function darkBoxes(buf, area) {
+    var W = buf.width, d = buf.data, aw = area.w, ah = area.h, dm = new Uint8Array(aw * ah), x, y, p, out = [], stack = [];
+    for (y = 0; y < ah; y++) for (x = 0; x < aw; x++) {
+      p = ((area.y + y) * W + area.x + x) * 4;
+      if (Math.abs(d[p] - TIP[0]) + Math.abs(d[p + 1] - TIP[1]) + Math.abs(d[p + 2] - TIP[2]) <= TIP_TOL) dm[y * aw + x] = 1;
+    }
+    for (y = 4; y < ah; y += 8) for (x = 4; x < aw; x += 8) {
+      if (dm[y * aw + x] !== 1) continue;
+      var x0 = x, x1 = x, y0 = y, y1 = y, n = 0;
+      stack.length = 0; stack.push(y * aw + x); dm[y * aw + x] = 2;
+      while (stack.length) {
+        var i = stack.pop(), cx = i % aw, cy = (i - cx) / aw; n++;
+        if (cx < x0) x0 = cx; if (cx > x1) x1 = cx; if (cy < y0) y0 = cy; if (cy > y1) y1 = cy;
+        if (cx > 0 && dm[i - 1] === 1) { dm[i - 1] = 2; stack.push(i - 1); }
+        if (cx < aw - 1 && dm[i + 1] === 1) { dm[i + 1] = 2; stack.push(i + 1); }
+        if (cy > 0 && dm[i - aw] === 1) { dm[i - aw] = 2; stack.push(i - aw); }
+        if (cy < ah - 1 && dm[i + aw] === 1) { dm[i + aw] = 2; stack.push(i + aw); }
+      }
+      var bw = x1 - x0 + 1, bh = y1 - y0 + 1;
+      if (bw >= 60 && bh >= 14 && bw <= 460 && n >= 0.6 * bw * bh) out.push({ x: area.x + x0, y: area.y + y0, w: bw, h: bh });
+    }
+    return out;
   }
 
   function fitSegment(buf, m, area, seg) {
@@ -112,8 +147,8 @@
     var p = median(diffs);
     if (p < 24 || p > 160) return null;
     /* refine the pitch and offset by least squares on the column indices */
-    var ks = [], cs = [];
-    colRuns.forEach(function (r) { if (r.n <= 1.05 * p) { ks.push(Math.round((r.c - colRuns[0].c) / p)); cs.push(r.c); } });
+    var ks = [], cs = [], base = null;
+    colRuns.forEach(function (r) { if (r.n <= 1.05 * p) { if (base === null) base = r.c; ks.push(Math.round((r.c - base) / p)); cs.push(r.c); } });
     if (ks.length < 3) return null;
     var n = ks.length, sk = 0, sc = 0, skk = 0, skc = 0;
     for (i = 0; i < n; i++) { sk += ks[i]; sc += cs[i]; skk += ks[i] * ks[i]; skc += ks[i] * cs[i]; }
@@ -231,6 +266,8 @@
     offX = offX || 0; offY = offY || 0;
     for (i = 0; i < areas.length && i < 4 && !grid; i++) grid = fitGrid(buf, areas[i]);
     if (!grid) return { error: areas.length ? "no-grid" : "no-bank", areas: areas.length };
+    var tips = grid.tips || [];
+    if (tips.length) { var ty0 = Math.min.apply(null, tips.map(function (t) { return t.y; })) - 3, ty1 = Math.max.apply(null, tips.map(function (t) { return t.y + t.h; })) + 3; band = band ? { y0: Math.min(band.y0, ty0 + offY), y1: Math.max(band.y1, ty1 + offY) } : { y0: ty0 + offY, y1: ty1 + offY }; }
     if (prev) grid = stabilise(grid, { pitch: prev.pitch, cols: prev.cols.map(function (v) { return v - offX; }), rows: prev.rows.map(function (q) { return { y: q.y - offY, section: q.section, clipped: q.clipped }; }) },
       band ? { y0: band.y0 - offY, y1: band.y1 - offY } : null);
     var slots = [], r, c;
@@ -239,14 +276,14 @@
       for (c = 0; c < grid.cols.length; c++) {
         var pt = patch(buf, grid, c, r), k = ink(pt);
         if (k < 0.04) continue;
-        var rect = slotRect(grid, c, r);
-        slots.push({ shifts: shiftedPatches.bind(null, buf, grid, c, r), col: c, row: r, section: grid.rows[r].section, x: rect.x + offX, y: rect.y + offY, w: rect.w, h: rect.h, patch: pt, ink: k });
+        var rect = slotRect(grid, c, r), cov = tips.some(function (t) { return rect.x < t.x + t.w + 2 && rect.x + rect.w > t.x - 2 && rect.y < t.y + t.h + 2 && rect.y + rect.h > t.y - 2; });
+        slots.push({ covered: cov, shifts: shiftedPatches.bind(null, buf, grid, c, r), col: c, row: r, section: grid.rows[r].section, x: rect.x + offX, y: rect.y + offY, w: rect.w, h: rect.h, patch: pt, ink: k });
       }
     }
     /* report the grid in capture coordinates too (the closures above keep the buffer's own) */
     var g = { pitch: grid.pitch, residual: grid.residual, x: grid.x + offX, y: grid.y + offY, w: grid.w, h: grid.h,
       cols: grid.cols.map(function (v) { return v + offX; }), rows: grid.rows.map(function (q) { return { y: q.y + offY, section: q.section, clipped: q.clipped, carried: q.carried }; }) };
-    return { grid: g, slots: slots, off: { x: offX, y: offY } };
+    return { grid: g, slots: slots, off: { x: offX, y: offY }, tips: tips.map(function (t) { return { x: t.x + offX, y: t.y + offY, w: t.w, h: t.h }; }) };
   }
 
   /* Reading the whole game every time is slow, so once the bank is found only its own area

@@ -2,7 +2,7 @@
    draws value/verdict markers over the game and explains each verdict. */
 (function () {
   "use strict";
-  var VERSION = "0.2.1";
+  var VERSION = "0.3.0";
   var READ_MS = 700, HOVER_MS = 250, OVERLAY_MS = 5000, OVERLAY_GROUP = "bankwise";
   function $(id) { return document.getElementById(id); }
   var store = {
@@ -11,11 +11,13 @@
   };
   function loadJSON(k, fallback) { try { var v = JSON.parse(store.get(k) || "null"); return v === null || v === undefined ? fallback : v; } catch (e) { return fallback; } }
 
-  var DEFAULTS = { template: "five", junkBelow: 500, useQuests: false, useSkills: false, goalLevel: 99, useOverrides: false, overrides: {}, overlay: true, rmUser: "" };
+  var DEFAULTS = { template: "five", junkBelow: 500, useQuests: false, useSkills: false, goalLevel: 99, useOverrides: false, overrides: {}, overlay: true, rmUser: "", teach: true };
   var settings = loadJSON("bankwise.settings.v1", {}), k;
   for (k in DEFAULTS) if (settings[k] === undefined) settings[k] = DEFAULTS[k];
   var profile = loadJSON("bankwise.profile.v1", null);
   var lib = Library.fromJSON(loadJSON("bankwise.library.v1", null)), libVersion = 1, libSaveTimer = null, libSaveFailed = false;
+
+  lib.names().forEach(function (n) { if (/^(withdraw|deposit)(-\S+)?$/i.test(n) || n.length < 3) lib.forget(n); });   /* v0.2.x could learn the action word as a name */
 
   var nameColours = loadJSON("bankwise.namecolours.v1", {}), tipColour = null;   /* the colour the game draws each item's name in - it means something, not yet known what */
 
@@ -24,6 +26,7 @@
   var clean = {};               /* position -> the slot as seen while the mouse was elsewhere (what gets taught) */
   var shown = null;             /* what the detail card shows: {slot} from the bank or {name} from the list */
   var hoverSlot = null, tipName = "", tipCount = 0, tipRaw = "", tipArea = null, tipWhy = "", lastTaught = "";
+  var seedInfo = "not loaded yet";
   var filter = "all", overlaySig = "", overlayAt = 0, lastError = "";
 
   function saveSettings() { store.set("bankwise.settings.v1", JSON.stringify(settings)); }
@@ -43,7 +46,11 @@
     r.slots.forEach(function (s) {
       var pk = posKey(s), under = mouse && mouse.x >= s.x && mouse.x < s.x + s.w && mouse.y >= s.y && mouse.y < s.y + s.h;
       /* a tooltip drawn over a slot is not the item: keep what was there a moment ago */
-      if (overlaps(s, tipArea) && !under && prev[pk]) { s.patch = prev[pk].patch; s.shifts = prev[pk].shifts; s.hash = prev[pk].hash; s.id = prev[pk].id; s.covered = true; return; }
+      if ((s.covered || overlaps(s, tipArea)) && !under) {
+        if (prev[pk] && prev[pk].id.state !== "covered") { s.patch = prev[pk].patch; s.shifts = prev[pk].shifts; s.hash = prev[pk].hash; s.id = prev[pk].id; }
+        else s.id = { state: "covered", d: Infinity, rivalD: Infinity };
+        s.covered = true; return;
+      }
       s.hash = hash(s.patch);
       s.id = idCache[s.hash] || (idCache[s.hash] = lib.identify(s.patch, s.shifts));
       if (!under) clean[pk] = { patch: s.patch, shifts: s.shifts, hash: s.hash, at: Date.now() };
@@ -82,6 +89,7 @@
       if (alt1.overLayFreezeGroup) alt1.overLayFreezeGroup(OVERLAY_GROUP);
       alt1.overLayClearGroup(OVERLAY_GROUP);
       view.slots.forEach(function (s) {
+        if (s.id.state === "covered") return;
         var inset = Math.round(s.w * 0.07);
         if (s.id.state === "unknown") { alt1.overLayRect(c.red, s.x + inset, s.y + inset, s.w - 2 * inset, s.h - 2 * inset, OVERLAY_MS, 2); return; }
         if (s.id.state === "unsure") { alt1.overLayRect(c.amber, s.x + inset, s.y + inset, s.w - 2 * inset, s.h - 2 * inset, OVERLAY_MS, 2); return; }
@@ -126,11 +134,10 @@
   function setStatus(text, warn) { var el = $("status"); el.textContent = text; el.className = warn ? "warn" : ""; }
 
   /* ---------- hover to teach ---------- */
+  /* the tooltip reader already separates the action from the name (by colour); this only tidies */
   function cleanName(raw) {
-    var s = String(raw || "").replace(/\s+/g, " ").trim();
-    s = s.replace(/^(withdraw|deposit|release|remove|take|use|examine|wear|wield|equip)(-\S+)?\s+/i, "");
-    s = s.replace(/\s*\/\s*\d+ more options?.*$/i, "").replace(/^[^A-Za-z0-9'(]+|[^A-Za-z0-9')+]+$/g, "");
-    return s;
+    var t = String(raw || "").replace(/\s+/g, " ").replace(/^[^A-Za-z0-9'(]+|[^A-Za-z0-9')+]+$/g, "").trim();
+    return /^(withdraw|deposit)(-\S+)?$/i.test(t) ? "" : t;
   }
   /* the tooltip near the mouse, in capture coordinates: {area, text, why} or null */
   function readTip(m) {
@@ -144,7 +151,7 @@
     return { area: { x: a.x + x, y: a.y + y, width: a.width, height: a.height }, text: tip.text, why: tip.why, colours: tip.colours, font: tip.font, colour: tip.colour };
   }
   function hoverTick() {
-    if (!view || !window.TipReader || !window.alt1) return;
+    if (!view || !window.TipReader || !window.alt1 || !settings.teach) return;
     var m = mousePos(), slot = null;
     if (m) view.slots.forEach(function (s) { if (m.x >= s.x && m.x < s.x + s.w && m.y >= s.y && m.y < s.y + s.h) slot = s; });
     if (!slot) { if (hoverSlot) { hoverSlot = null; tipCount = 0; tipArea = null; } return; }
@@ -176,14 +183,15 @@
   function render() {
     if (!view) { $("counts").innerHTML = ""; $("list").innerHTML = '<div class="empty">Nothing to show until the bank is open.</div>'; $("list")._html = ""; renderCard(); return; }
     var known = 0, unsure = 0, unknown = 0;
-    view.slots.forEach(function (s) { if (s.id.state === "known") known++; else if (s.id.state === "unsure") unsure++; else unknown++; });
-    setStatus(unknown + unsure ? "Sweep your mouse over the boxed items so I can learn them." : "Every item on screen is known.", false);
+    view.slots.forEach(function (s) { if (s.id.state === "known") known++; else if (s.id.state === "unsure") unsure++; else if (s.id.state !== "covered") unknown++; });
+    setStatus(unknown + unsure ? (settings.teach ? "Sweep your mouse over the boxed items so I can learn them." : "Learning is off. Turn on Teach to learn the boxed items.") : "Every item on screen is known.", false);
     $("counts").innerHTML = "<span><b>" + view.slots.length + "</b> on screen</span><span><b>" + known + "</b> known</span><span><b>" + (unknown + unsure) + "</b> to teach</span><span><b>" + lib.names().length + "</b> in library</span>";
     renderList(); renderCard();
   }
   function renderList() {
     var rows = [], seen = {};
     view.slots.forEach(function (s) {
+      if (s.id.state === "covered") return;
       if (s.id.state !== "known") { rows.push({ slot: s, teach: true, price: -1 }); return; }
       if (seen[s.id.name]) return;
       seen[s.id.name] = 1;
@@ -249,7 +257,7 @@
     $("template").innerHTML = Kinds.TEMPLATES.map(function (t) { return '<option value="' + t.id + '">' + esc(t.name) + "</option>"; }).join("");
     $("template").value = settings.template; $("junkbelow").value = settings.junkBelow; $("goallevel").value = settings.goalLevel;
     $("usequests").checked = settings.useQuests; $("useskills").checked = settings.useSkills; $("useoverrides").checked = settings.useOverrides;
-    $("overlay").checked = settings.overlay; $("rmuser").value = settings.rmUser;
+    $("overlay").checked = settings.overlay; $("teach").checked = settings.teach; $("rmuser").value = settings.rmUser;
     renderTemplate(); renderLibStatus(); renderProfile();
   }
   function changed() { saveSettings(); overlaySig = ""; if (view) { render(); drawOverlay(); } renderProfile(); }
@@ -262,6 +270,7 @@
   $("usequests").addEventListener("change", function () { settings.useQuests = this.checked; changed(); });
   $("useskills").addEventListener("change", function () { settings.useSkills = this.checked; changed(); });
   $("useoverrides").addEventListener("change", function () { settings.useOverrides = this.checked; changed(); });
+  $("teach").addEventListener("change", function () { settings.teach = this.checked; saveSettings(); hoverSlot = null; tipArea = null; tipCount = 0; if (view) render(); });
   $("overlay").addEventListener("change", function () { settings.overlay = this.checked; saveSettings(); if (!this.checked) { overlaySig = overlaySig || "x"; clearOverlay(); } else { overlaySig = ""; drawOverlay(); } });
   $("rmuser").addEventListener("input", function () { settings.rmUser = this.value.trim(); saveSettings(); renderProfile(); });
   $("rmfetch").addEventListener("click", function () {
@@ -276,7 +285,7 @@
     catch (e) { renderProfile("That did not look like RuneMetrics data: " + e.message, true); }
   });
   $("libexport").addEventListener("click", function () {
-    var a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify(lib.toJSON())], { type: "application/json" })); a.download = "bankwise-library.json"; document.body.appendChild(a); a.click(); a.remove();
+    var a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify((function () { var o = lib.toJSON(); o.colours = nameColours; return o; })())], { type: "application/json" })); a.download = "bankwise-library.json"; document.body.appendChild(a); a.click(); a.remove();
   });
   $("libimport").addEventListener("click", function () { $("libfile").click(); });
   $("libfile").addEventListener("change", function () {
@@ -322,6 +331,7 @@
     lines.push("alt1: " + !!window.alt1 + (window.alt1 ? "  pixel: " + !!alt1.permissionPixel + "  overlay: " + !!alt1.permissionOverlay + "  rsLinked: " + !!alt1.rsLinked : ""));
     lines.push("tooltip reader: " + (window.TipReader && window.OCR && window.Alt1Fonts ? "loaded" : "MISSING") + "   last read: " + JSON.stringify(tipRaw) + " (" + tipWhy + ")   last taught: " + JSON.stringify(lastTaught));
     lines.push("prices: " + Data.status.prices); lines.push("wiki facts: " + Data.status.facts); if (Data.status.lastError) lines.push("last data error: " + Data.status.lastError);
+    lines.push("starter library: " + seedInfo);
     lines.push("library: " + lib.names().length + " items, " + lib.samples.length + " samples" + (libSaveFailed ? "  SAVE FAILED" : ""));
     var r = null;
     try { r = Reader.read(); } catch (err) { lines.push("reader crashed: " + err.message); }
@@ -347,15 +357,46 @@
       } catch (err2) { out.appendChild(document.createTextNode("(capture export failed: " + err2.message + ")")); }
     }
     var tools = document.createElement("div");
-    tools.innerHTML = '\n<a href="#" id="dbgdelay">Capture in 4 seconds (go and hover a bank item, keep still)</a>\n<a href="#" id="dbgdata">Test the wiki data sources</a>\n';
+    tools.innerHTML = '\n<a href="#" id="dbgdelay">Capture in 4 seconds (go and hover a bank item, keep still)</a>\n<a href="#" id="dbgdata">Test the wiki data sources</a>\n<a href="#" id="dbgicons">Test wiki icons against my learned items</a>\n';
     out.appendChild(tools);
     $("dbgdelay").addEventListener("click", function (ev) { ev.preventDefault(); delayedCapture(out); });
     $("dbgdata").addEventListener("click", function (ev) {
       ev.preventDefault(); var pre = document.createElement("div"); pre.textContent = "testing..."; out.appendChild(pre);
       Data.selfTest().then(function (res) { pre.textContent = res.join("\n"); });
     });
+    $("dbgicons").addEventListener("click", function (ev) { ev.preventDefault(); wikiIconTest(out); });
     out.style.display = "";
   });
+  /* Could the library be pre-filled from the wiki's item icons?  For up to 15 learned items, fetch
+     the wiki icon, lay it on the bank background at every position in a 44px slot and report the
+     closest it gets to what the game really draws.  0-20 = same picture; 60+ = not usable. */
+  function wikiIconTest(out) {
+    var pre = document.createElement("div"); pre.textContent = "wiki icon test running..."; out.appendChild(pre);
+    var names = lib.names().slice(0, 15), lines = [], left = names.length;
+    if (!left) { pre.textContent = "teach a few items first"; return; }
+    function done() { if (--left <= 0) pre.textContent = "wiki icon test (distance: under 20 = same picture)\n" + lines.join("\n"); }
+    names.forEach(function (name) {
+      var img = new Image(); img.crossOrigin = "anonymous";
+      img.onerror = function () { lines.push(name + ": icon did not load (no such file, or the wiki refuses cross-site image reads)"); done(); };
+      img.onload = function () {
+        try {
+          var w = img.width, h = img.height, cv = document.createElement("canvas"); cv.width = w; cv.height = h;
+          var cx = cv.getContext("2d"); cx.drawImage(img, 0, 0); var px = cx.getImageData(0, 0, w, h).data;
+          var best = 1e9, bx = 0, by = 0, P = 44, grid = { pitch: P, cols: [P / 2], rows: [{ y: P / 2 }] }, sample = lib.byName[name][0].patch, dx, dy, x, y;
+          for (dy = 0; dy + h <= P; dy++) for (dx = 0; dx + w <= P; dx++) {
+            var buf = { width: P, height: P, data: new Uint8ClampedArray(P * P * 4) };
+            for (x = 0; x < P * P; x++) { buf.data[x * 4] = Reader.BG[0]; buf.data[x * 4 + 1] = Reader.BG[1]; buf.data[x * 4 + 2] = Reader.BG[2]; buf.data[x * 4 + 3] = 255; }
+            for (y = 0; y < h; y++) for (x = 0; x < w; x++) { var s4 = (y * w + x) * 4, a = px[s4 + 3] / 255, d4 = ((y + dy) * P + x + dx) * 4; buf.data[d4] = px[s4] * a + Reader.BG[0] * (1 - a); buf.data[d4 + 1] = px[s4 + 1] * a + Reader.BG[1] * (1 - a); buf.data[d4 + 2] = px[s4 + 2] * a + Reader.BG[2] * (1 - a); }
+            var d = Library.dist(Reader.patch(buf, grid, 0, 0), sample);
+            if (d < best) { best = d; bx = dx; by = dy; }
+          }
+          lines.push(name + ": icon " + w + "x" + h + ", closest " + best.toFixed(1) + " at offset " + bx + "," + by);
+        } catch (e) { lines.push(name + ": loaded but unreadable (" + e.message + ")"); }
+        done();
+      };
+      img.src = "https://runescape.wiki/images/" + encodeURIComponent(name.replace(/ /g, "_")) + ".png";
+    });
+  }
   /* the tooltip only exists while the mouse is on the item, so the capture has to take itself */
   function delayedCapture(out) {
     var note = document.createElement("div"); out.appendChild(note);
@@ -390,6 +431,15 @@
   applySettingsToUI();
   Data.onChange(function () { overlaySig = ""; if (view) { render(); drawOverlay(); } });
   Data.loadPrices();
+  /* a starter library shipped with the app, so nobody begins from nothing */
+  fetch("./data/seed-library.json?v=" + VERSION).then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
+    if (!j) return;
+    var seed = Library.fromJSON(j), n = 0;
+    seed.samples.forEach(function (sm) { if (lib.add(sm.name, sm.patch, "seed")) n++; });
+    if (j.colours) for (var nm in j.colours) if (!nameColours[nm]) nameColours[nm] = j.colours[nm];
+    seedInfo = seed.names().length + " items in the starter library, " + n + " new to this computer";
+    if (n) { libVersion++; saveLibrary(); }
+  }).catch(function () { seedInfo = "no starter library"; });
   if (window.alt1) {
     try { alt1.identifyAppUrl("./appconfig.json"); } catch (e) { /* not fatal */ }
     window.addEventListener("beforeunload", function () { overlaySig = overlaySig || "x"; clearOverlay(); });

@@ -8,7 +8,7 @@ An [Alt1 Toolkit](https://runeapps.org/alt1) app for RuneScape 3 that reads your
 
 It only reads the screen and draws markers. It never clicks, types or moves anything in the game.
 
-> **Status: v0.2.0.** Bank reading, item matching and tooltip reading are tested on real Alt1
+> **Status: v0.3.0.** Bank reading, item matching and tooltip reading are tested on real Alt1
 > captures (items match pixel-for-pixel between captures). The wiki lookups and the RuneMetrics
 > lookup have not worked live yet. See "Not proven yet" below.
 
@@ -24,13 +24,14 @@ The app needs the **pixel**, **overlay** and **game state** permissions (game st
 
 ## Using it
 
-1. Open your bank. Every item gets a red box: the app does not know any items yet.
+1. Open your bank. Items the app does not know get a red box. It starts from the starter library in `data/seed-library.json` when the app ships one; otherwise from nothing.
 2. Sweep your mouse across the items. When the game shows an item's name, Bankwise reads it and remembers what that item looks like - permanently. A few minutes covers a whole bank, and each item only ever needs doing once.
 3. Known items lose their box and get:
    - a coloured bar for value: green 1k+, teal 10k+, blue 100k+, purple 1m+, gold 10m+ (per item, not per stack);
    - a letter when there is advice: **J** junk (sell or alch), **D** reclaimable from Diango (safe to destroy), **Q** quest item for a finished quest, **K** quest item to keep.
 4. Hover an item in the bank, or a row in the app, for the detail card: price, alch value, the tab it belongs in and the reason for the verdict.
-5. An amber box means "looks like X, not sure" - hover it once to settle it. If a name was read wrongly, use *wrong name?* on the card.
+5. The **teach** tick-box in the header switches learning from tooltips on and off. *Type the name yourself* on the card fixes a misread.
+6. An amber box means "looks like X, not sure" - hover it once to settle it. If a name was read wrongly, use *wrong name?* on the card.
 
 ### Settings
 

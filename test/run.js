@@ -67,10 +67,25 @@ console.log("real captures");
   var recol = [["cyan", function (r, g, b) { return [b, g, r]; }], ["green", function (r, g, b) { return [b, r, b]; }], ["red", function (r, g, b) { return [r, b, b]; }]].map(function (t) { var r = Tip.read(recolour(t[1]), 705, 342); return t[0] + "=" + (r && r.text); });
   ok("name colour is measured, not assumed: " + recol.join(", "), recol.every(function (t) { return /=Fremennik blade$/.test(t); }));
   var white = Tip.read(recolour(function (r) { return [Math.round(r * 227 / 248), Math.round(r * 215 / 248), Math.round(r * 207 / 248)]; }), 705, 342);
-  ok("a name in the same white as the action reads as the whole line: " + JSON.stringify(white && white.text), white && white.text === "Withdraw-All Fremennik blade");
+  ok("a name in the very same white as the action still comes out alone: " + JSON.stringify(white && white.text), white && white.text === "Fremennik blade");
+  var whiteBuf = loadPng(path.join(__dirname, "capture-hover-white.png")), wt = Tip.read(whiteBuf, 694, 540);
+  ok("free-to-play item (name in pale cyan, close to the action's white): " + JSON.stringify(wt && wt.text) + " from line " + JSON.stringify(wt && wt.line), wt && wt.text === "Nature rune" && wt.colour.join() === "184,209,209", JSON.stringify(wt));
+  ok("the action word alone is never a name", Tip.stripAction("Withdraw-All") === "" && Tip.stripAction("Withdraw-All Coins") === "Coins" && Tip.stripAction("Clean guam") === "Clean guam");
+  /* the tooltip under every third slot of the bank: the grid must survive all of them */
+  (function () {
+    function paste(tx, ty) { var o = { width: plainBuf.width, height: plainBuf.height, data: new Uint8ClampedArray(plainBuf.data) }, x, y; for (y = 0; y < 50; y++) for (x = 0; x < 179; x++) { var sp = ((565 + y) * whiteBuf.width + 605 + x) * 4, dp = ((ty + y) * o.width + tx + x) * 4; o.data[dp] = whiteBuf.data[sp]; o.data[dp + 1] = whiteBuf.data[sp + 1]; o.data[dp + 2] = whiteBuf.data[sp + 2]; } return o; }
+    var bad = [], n = 0, r, c;
+    for (r = 0; r < plain.grid.rows.length; r++) for (c = 0; c < 10; c += 3) {
+      var mx = Math.round(plain.grid.cols[c]), my = Math.round(plain.grid.rows[r].y), res = Reader.readBuffer(paste(mx - 88, my + 26), false, 0, 0, plain.grid, null); n++;
+      var want = plain.slots.some(function (q) { return mx >= q.x && mx < q.x + q.w && my >= q.y && my < q.y + q.h; });
+      var got = res.slots && res.slots.filter(function (q) { return mx >= q.x && mx < q.x + q.w && my >= q.y && my < q.y + q.h; })[0];
+      if (res.error || res.slots.length < plain.slots.length || (want && (!got || got.covered))) bad.push(r + "," + c + ":" + (res.error || res.slots.length));
+    }
+    ok("tooltip placed under " + n + " different slots: bank still read every time, hovered slot never hidden", !bad.length, bad.join(" "));
+  })();
   ok("no tooltip -> nothing read", Tip.read(plainBuf, 705, 342) === null);
   var w0 = tip.area.whole, hover = Reader.readBuffer(hoverBuf, false, 0, 0, plain.grid, { y0: w0.y, y1: w0.y + w0.height });
-  ok("tooltip over the bank: " + rawHover.grid.rows.length + " rows found on their own, " + hover.grid.rows.length + " with the previous read to lean on", rawHover.grid.rows.length < 20 && hover.grid.rows.length === 20 && hover.slots.every(function (s) { return plain.slots.some(function (q) { return q.x === s.x && q.y === s.y; }); }));
+  ok("tooltip over the bank: " + rawHover.grid.rows.length + " rows found on their own, " + hover.grid.rows.length + " with the previous read to lean on", hover.grid.rows.length === 20 && hover.slots.every(function (s) { return plain.slots.some(function (q) { return q.x === s.x && q.y === s.y; }); }));
   /* teach from the plain capture, recognise in the hover capture wherever the tooltip is not in the way */
   var lib = new Library(); plain.slots.forEach(function (s) { lib.add("p" + s.x + "," + s.y, s.patch, "test", s.shifts); });
   var w = tip.area.whole, right = 0, wrong = [], twins = [], covered = 0;

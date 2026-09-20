@@ -74,26 +74,50 @@
     }
     return Object.keys(groups).map(function (k) { return groups[k]; }).filter(function (e) { return e.n >= 12; }).sort(function (a, b) { return b.n - a.n; }).slice(0, 4);
   }
-  function isActionWhite(c) { return Math.max(c[0], c[1], c[2]) - Math.min(c[0], c[1], c[2]) < 40; }
+  /* The action words ("Withdraw-All") are drawn in a warm off-white (227,215,207); item names are
+     not.  Pieces are told apart by that colour, never by their words - "Clean guam" and "Light orb"
+     are item names that start with a verb.  Only when the whole line is off-white is a leading
+     Withdraw-/Deposit- word cut by its spelling. */
+  function isActionColour(c) { return Math.max(c[0], c[1], c[2]) - Math.min(c[0], c[1], c[2]) < 40 && c[0] >= c[2] + 8; }
+  function stripAction(text) {
+    var w = String(text || "").replace(/\s+/g, " ").trim().split(" ");
+    while (w.length > 0 && /^(withdraw|deposit)(-[A-Za-z0-9]+)?$/i.test(w[0])) w.shift();
+    return w.join(" ");
+  }
 
-  /* the item name on the box's first line */
+  /* The first line is "<action> <item name>", the two parts in different colours (and the name's
+     colour depends on the item: gold for members' items, pale cyan for free ones, maybe others).
+     Every colour on the line is read separately, the pieces are put back in left-to-right order,
+     and the action words are dropped - so it does not matter which colour the name is in. */
   function readName(buf, box) {
     if (!OCR || !FONTS) return { text: "", why: "ocr or fonts not loaded" };
-    var order = lastSize ? [lastSize].concat(SIZES.filter(function (s) { return s !== lastSize; })) : SIZES, tried = [], si, ci, y, k;
-    /* coloured text first (that is the name on its own); the off-white of the action words last,
-       which reads the whole line when the name itself is white - the caller strips the action */
-    var found = textColours(buf, box), cols = found.filter(function (e) { return !isActionWhite(e.col); }).concat(found.filter(function (e) { return isActionWhite(e.col); }));
-    NAME_COLOURS.forEach(function (c) { cols.push({ col: c, x0: box.x, x1: box.x + box.width }); });
+    var order = lastSize ? [lastSize].concat(SIZES.filter(function (s) { return s !== lastSize; })) : SIZES, tried = [], si, y, k;
+    var cols = textColours(buf, box);
+    if (!cols.length) NAME_COLOURS.forEach(function (c) { cols.push({ col: c, x0: box.x, x1: box.x + box.width, n: 0 }); });
     for (si = 0; si < order.length; si++) {
       var font = FONTS[order[si]]; if (!font) continue;
       font = font.default || font;
-      for (ci = 0; ci < cols.length; ci++) for (y = box.y + 8; y <= box.y + 16; y += 2) for (k = 0; k < 3; k++) {
-        var e = cols[ci], x = Math.round(e.x0 + (e.x1 - e.x0) * [0.5, 0.8, 0.2][k]), r = null;
-        try { r = OCR.findReadLine(buf, font, [e.col], x, y); } catch (err) { tried.push(order[si] + ": " + err.message); break; }
-        if (r && r.text && (r.text.match(/[A-Za-z]/g) || []).length >= 3) { lastSize = order[si]; return { text: r.text.replace(/\s+/g, " ").trim(), font: order[si], colour: e.col }; }
-      }
+      var parts = [];
+      cols.forEach(function (e) {
+        var best = null;
+        for (y = box.y + 8; y <= box.y + 16 && !best; y += 2) for (k = 0; k < 3 && !best; k++) {
+          var x = Math.round(e.x0 + (e.x1 - e.x0) * [0.5, 0.8, 0.2][k]), r = null;
+          try { r = OCR.findReadLine(buf, font, [e.col], x, y); } catch (err) { tried.push(order[si] + ": " + err.message); return; }
+          if (r && r.text && (r.text.match(/[A-Za-z]/g) || []).length >= 2) best = { text: r.text.replace(/\s+/g, " ").trim(), x: r.debugArea ? r.debugArea.x : e.x0, col: e.col };
+        }
+        if (best && !parts.some(function (q) { return q.text === best.text && Math.abs(q.x - best.x) < 4; })) parts.push(best);
+      });
+      if (!parts.length) continue;
+      parts.sort(function (p, q) { return p.x - q.x; });
+      var line = parts.map(function (q) { return q.text; }).join(" "), named = parts.filter(function (q) { return !isActionColour(q.col); });
+      var name = named.length ? named.map(function (q) { return q.text; }).join(" ") : stripAction(line);
+      if (named.length) parts = named;
+      if (name.length < 3) { tried.push(order[si] + ": only read " + JSON.stringify(line)); continue; }
+      /* the name's own colour = the colour of the right-most piece */
+      lastSize = order[si];
+      return { text: name, line: line, font: order[si], colour: parts[parts.length - 1].col };
     }
-    return { text: "", why: "no font/colour read the first line" + (tried.length ? " (" + tried.join("; ") + ")" : "") };
+    return { text: "", why: "could not read a name on the first line" + (tried.length ? " (" + tried.join("; ") + ")" : "") };
   }
   /* brightest colours on the first line - for the debug panel when the name does not read */
   function lineColours(buf, box) {
@@ -109,7 +133,7 @@
     var box = findBox(buf, mx, my);
     if (!box) return null;
     var name = readName(buf, box);
-    return { area: box, text: name.text, font: name.font, colour: name.colour, why: name.why, colours: name.text ? null : lineColours(buf, box) };
+    return { area: box, text: name.text, line: name.line, font: name.font, colour: name.colour, why: name.why, colours: name.text ? null : lineColours(buf, box) };
   }
-  return { findBox: findBox, readName: readName, read: read, lineColours: lineColours };
+  return { findBox: findBox, readName: readName, read: read, lineColours: lineColours, stripAction: stripAction };
 });
