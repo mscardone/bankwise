@@ -52,9 +52,39 @@
   /* -> {price, alch, value} or null when the item is not on the Grand Exchange (or prices are not loaded) */
   function price(name) {
     var p = prices && prices[key(name)];
-    return p ? { price: p[0], alch: p[1], value: p[2] } : null;
+    if (p) return { price: p[0], alch: p[1], value: p[2] };
+    var o = one[key(name)];
+    if (!prices && !o && name && !onePending[key(name)]) { onePending[key(name)] = 1; oneQueue.push(name); if (!oneTimer) oneTimer = setTimeout(flushOne, 500); }
+    return o && o.price !== null ? { price: o.price, alch: 0, value: 0 } : null;
   }
-  function pricesLoaded() { return !!prices; }
+  /* true once we can tell "not on the Grand Exchange" from "don't know yet" for this item */
+  function pricesLoaded(name) { return !!prices || !!(name && one[key(name)]); }
+
+  /* fallback when the one-file dump cannot be fetched: ask the exchange API item by item (50 per request) */
+  var one = {}, onePending = {}, oneQueue = [], oneTimer = null;
+  function flushOne() {
+    oneTimer = null;
+    var batch = oneQueue.splice(0, 50);
+    if (!batch.length) return;
+    fetch(PRICE_ONE + encodeURIComponent(batch.join("|"))).then(function (r) { return r.json(); }).then(function (j) {
+      var byKey = {}, n;
+      for (n in (j || {})) if (j[n] && typeof j[n] === "object") byKey[key(n)] = j[n];
+      batch.forEach(function (nm) { var k = key(nm), hit = byKey[k]; one[k] = { price: hit && hit.price !== undefined ? +hit.price : null }; delete onePending[k]; });
+      status.prices = "item-by-item: " + Object.keys(one).length + " looked up (the one-file dump was unavailable)";
+      changed();
+      if (oneQueue.length) oneTimer = setTimeout(flushOne, 1000);
+    }).catch(function (e) { batch.forEach(function (nm) { delete onePending[key(nm)]; }); status.lastError = "item prices: " + e.message; });
+  }
+
+  /* debug: fetch each source once and report exactly what came back */
+  function selfTest() {
+    var urls = [["price dump", PRICE_URL], ["price, one item", PRICE_ONE + encodeURIComponent("Magic logs|Santa hat")],
+      ["wiki categories", WIKI_API + "?action=query&format=json&origin=*&redirects=1&prop=categories&cllimit=max&clshow=!hidden&titles=" + encodeURIComponent("Magic logs|Santa hat|Commorb")]];
+    return Promise.all(urls.map(function (u) {
+      return fetch(u[1]).then(function (r) { return r.text().then(function (t) { return u[0] + ": HTTP " + r.status + ", " + t.length + " chars\n    " + t.slice(0, u[0] === "wiki categories" ? 1500 : 400).replace(/\s+/g, " "); }); })
+        .catch(function (e) { return u[0] + ": FAILED - " + e.message + "\n    " + u[1]; });
+    }));
+  }
 
   /* ---------- facts (wiki categories) ---------- */
   function loadFacts() { try { facts = JSON.parse(store.get("bankwise.facts.v1") || "{}") || {}; } catch (e) { facts = {}; } }
@@ -105,7 +135,7 @@
     var f = factsFor(name), p = price(name);
     return {
       name: name, price: p ? p.price : null, alch: p ? p.alch : null,
-      tradeable: p ? true : (pricesLoaded() ? false : null),
+      tradeable: p ? true : (pricesLoaded(name) ? false : null),
       known: !!(f && !f.missing), cats: f ? f.cats : [],
       diango: has(f, /diango/i),
       questItem: has(f, /^quest items?$/i) || has(f, /quest items/i),
@@ -115,7 +145,7 @@
 
   loadFacts();
   return {
-    loadPrices: loadPrices, price: price, pricesLoaded: pricesLoaded, factsFor: factsFor, describe: describe, status: status,
+    loadPrices: loadPrices, selfTest: selfTest, price: price, pricesLoaded: pricesLoaded, factsFor: factsFor, describe: describe, status: status,
     onChange: function (f) { listeners.push(f); }, key: key,
     clearCache: function () { facts = {}; saveFacts(); prices = null; pricesAt = 0; store.set("bankwise.prices.v1", "null"); },
     _parseDump: parseDump, _collect: collect, _facts: function () { return facts; }
