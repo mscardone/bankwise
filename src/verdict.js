@@ -99,8 +99,10 @@
 
     /* gear you have outgrown: tier below the tier your level lets you wear (level 72 -> tier 70) */
     if (opts.useSkills && profile && profile.levels && item.tradeable && item.gear && item.gear.tier && (item.kind === "weapon" || item.kind === "armour")) {
-      var sk = gearSkill(item.gear, item.kind), lvl = profile.levels[sk] || 1, mine = Math.floor(lvl / 10) * 10;
-      if (item.gear.tier < mine) return { id: "sell", tag: "J", reason: "Tier " + item.gear.tier + " " + (item.gear.cls || "") + (item.kind === "weapon" ? " weapon" : " armour") + ", and your " + SKILLS[sk] + " level of " + lvl + " lets you use tier " + mine + ": sell it." };
+      /* the level it asks for is a second opinion on the tier: never call something outgrown that needs your own tier to wear */
+      var sk = gearSkill(item.gear, item.kind), lvl = profile.levels[sk] || 1, mine = Math.floor(lvl / 10) * 10, asks = 0;
+      String(item.gear.stats && item.gear.stats.needs || "").replace(/\d+/g, function (n) { if (+n <= 120 && +n > asks) asks = +n; return n; });
+      if (Math.max(item.gear.tier, asks) < mine) return { id: "sell", tag: "J", reason: "Tier " + item.gear.tier + " " + (item.gear.cls || "") + (item.kind === "weapon" ? " weapon" : " armour") + ", and your " + SKILLS[sk] + " level of " + lvl + " lets you use tier " + mine + ": sell it." };
     }
 
     var supply = !!Kinds.SUPPLY[item.kind];

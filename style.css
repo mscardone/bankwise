@@ -30,16 +30,16 @@ select{width:100%}
 .hovertop{display:flex;gap:8px;align-items:center}
 .icon{width:44px;height:44px;flex:0 0 44px;border-radius:4px;background:#33302a center/contain no-repeat;border:1px solid var(--line);image-rendering:pixelated}
 .hovertext{min-width:0;flex:1}
-#hname{font-size:14px;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#hprice{color:var(--dim);font-size:11px}
+#hname{font-size:16px;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#hprice{color:var(--dim);font-size:13px}
 #hprice b{color:var(--text)}
-.verdict{margin-top:6px;font-size:11px;color:var(--dim);height:50px;overflow:hidden}   /* fixed height: the list below must not move while rows are hovered */
+.verdict{margin-top:6px;font-size:13px;line-height:1.4;color:var(--dim);height:56px;overflow:hidden}   /* fixed height: the list below must not move while rows are hovered */
 .verdict .chip{margin-right:5px}
-#htab{font-size:11px;color:var(--dim);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#htab{font-size:13px;color:var(--dim);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #htab b{color:var(--gold)}
 #hpins{margin-top:6px;display:flex;gap:4px}
 #hpins button,#hfix button{padding:2px 6px;font-size:10px}
-#hfix{margin-top:4px;font-size:10px}
+#hfix{margin-top:4px;font-size:12px}
 #hfix a{color:var(--dim)}
 #renameinput{width:150px}
 
@@ -50,7 +50,7 @@ select{width:100%}
 #filters{display:flex;gap:3px;flex-wrap:wrap;margin-bottom:5px}
 #filters button{padding:2px 7px;font-size:10px}
 #list{max-height:40vh;overflow:auto;border:1px solid var(--line);border-radius:5px;background:var(--panel)}
-.item{display:flex;align-items:center;gap:6px;padding:3px 6px;border-bottom:1px solid var(--line);cursor:default}
+.item{display:flex;align-items:center;gap:6px;padding:3px 14px 3px 6px;border-bottom:1px solid var(--line);cursor:default}
 .item:last-child{border-bottom:0}
 .item:hover{background:var(--panel2)}
 .item .mini{width:26px;height:26px;flex:0 0 26px;background:center/contain no-repeat;image-rendering:pixelated}
@@ -88,15 +88,15 @@ footer{margin-top:8px}
 #dbgout a{color:var(--blue)}
 
 .twin{color:var(--amber)}
-#hblurb{margin-top:5px;font-size:11px;line-height:1.35;height:30px;overflow:hidden;color:var(--text);opacity:.85}
-#hstats{font-size:11px;line-height:1.35;height:30px;overflow:hidden;color:var(--gold)}
+#hblurb{margin-top:5px;font-size:13px;line-height:1.35;height:36px;overflow:hidden;color:var(--text);opacity:.85}
+#hstats{font-size:13px;line-height:1.35;height:36px;overflow:hidden;color:var(--gold)}
 .chip.alch{background:var(--gold)} .chip.diango{background:var(--blue)}
-#hquests{font-size:11px;line-height:1.35;height:30px;overflow:hidden;color:var(--dim)}
+#hquests{font-size:13px;line-height:1.35;height:36px;overflow:hidden;color:var(--dim)}
 #hquests a,#hfix a.ext{color:var(--blue)}
 #hquests .done{text-decoration:line-through;opacity:.7}
 #hfix a{margin-right:10px}
 .gold{color:var(--stackgold,#f8d56b)}
-#halch{color:var(--dim);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#halch{color:var(--dim);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #halch b{color:var(--text)}
 .tierrow{display:flex;align-items:center;gap:5px;margin:3px 0 3px 18px;font-size:11px}
 .tierrow input[type=number]{width:86px}
@@ -105,3 +105,14 @@ input.hex.bad{border-color:var(--warn)}
 #settings .row.sub{margin-left:18px}
 #settings .row label{display:inline-flex;align-items:center;gap:3px;margin-right:6px}
 .qty{color:var(--dim);font-size:10px}
+
+#gearpanel{border:1px solid var(--line);border-radius:5px;background:var(--panel);padding:6px;max-height:48vh;overflow:auto}
+#gearstyles{display:flex;gap:3px;margin-bottom:6px}
+#gearstyles button{padding:2px 8px;font-size:11px;flex:1}
+.gearrow{display:flex;gap:8px;padding:4px 2px;border-bottom:1px solid var(--line);font-size:12px}
+.gearrow .gslot{flex:0 0 78px;color:var(--dim)}
+.gearrow .gname{flex:1;min-width:0}
+.gearrow a{color:var(--text);text-decoration:none}
+.gearrow a:hover{color:var(--gold)}
+.glocked{font-size:10px;color:var(--amber);margin-top:1px}
+#gearpanel .hint a{color:var(--dim)}

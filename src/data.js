@@ -255,14 +255,21 @@
     var m = new RegExp("\\|\\s*" + name + "\\d*\\s*=[ \\t]*([^\\n|}]*)", "i").exec(text || "");
     return m ? m[1].replace(/\[\[(?:[^\]|]*\|)?([^\]]*)\]\]/g, "$1").replace(/\{\{[^}]*\}\}/g, "").replace(/<[^>]+>/g, "").trim() : "";
   }
+  /* "{{scm|Defence|70}}, {{scm|Attack|70}}" -> "70 Defence, 70 Attack": the skill templates hold the actual requirement */
+  function requirements(box) {
+    var m = /\|\s*requirements\d*\s*=[ \t]*([^\n]*)/i.exec(box || "");
+    if (!m) return "";
+    return m[1].replace(/\{\{\s*[A-Za-z]*\s*\|([^|{}]+)\|([^|{}]+)[^{}]*\}\}/g, function (all, a, b) { return /^\d+$/.test(a.trim()) ? a.trim() + " " + b.trim() : /^\d+$/.test(b.trim()) ? b.trim() + " " + a.trim() : a.trim(); })
+      .replace(/\{\{[^{}]*\}\}/g, "").replace(/\[\[(?:[^\]|]*\|)?([^\]]*)\]\]/g, "$1").replace(/<[^>]+>/g, " ").replace(/[{}|]+/g, " ").replace(/\s+/g, " ").replace(/^[\s,;]+|[\s,;]+$/g, "");
+  }
   function parseGear(text) {
     text = String(text || "");
-    var at = text.search(/\{\{\s*Infobox[ _]Bonuses/i), box = at >= 0 ? text.slice(at, at + 2500) : "", out = { v: 2, tier: 0, stats: {} };
+    var at = text.search(/\{\{\s*Infobox[ _]Bonuses/i), box = at >= 0 ? text.slice(at, at + 2500) : "", out = { v: 3, tier: 0, stats: {} };
     if (box) {
       var end = box.search(/\n\}\}/); if (end > 0) box = box.slice(0, end);
       out.tier = +(field(box, "tier").match(/\d+/) || [0])[0];
       out.cls = field(box, "class").toLowerCase(); out.slot = field(box, "slot").toLowerCase(); out.type = field(box, "type").toLowerCase();
-      STAT_KEYS.forEach(function (k) { var v = field(box, k[0]); if (v && !/^(0|0\.0|no|none|n\/a|-)$/i.test(v)) out.stats[k[1]] = v.slice(0, 40); });
+      STAT_KEYS.forEach(function (k) { var v = k[0] === "requirements" ? requirements(box) : field(box, k[0]); if (v && !/^(0|0\.0|no|none|n\/a|-)$/i.test(v)) out.stats[k[1]] = v.slice(0, 40); });
     }
     var val = field(text, "value").replace(/,/g, ""), alchable = field(text, "alchable").toLowerCase();
     if (/^\d+$/.test(val)) out.value = +val;
@@ -272,7 +279,7 @@
   /* -> the object above (tier 0 = the page gives none), or null while it is being fetched */
   function gearFor(name) {
     var k = key(name), f = facts[k];
-    if (f && f.gear && f.gear.v === 2) return f.gear;
+    if (f && f.gear && f.gear.v === 3) return f.gear;
     if (!f || f.missing) { if (!f) factsFor(name); return null; }
     if (!gearPending[k]) { gearPending[k] = 1; gearQueue.push(name); if (!gearTimer) gearTimer = setTimeout(flushGear, 600); }
     return null;
@@ -290,7 +297,7 @@
         var text = rev && (rev.slots && rev.slots.main ? (rev.slots.main["*"] !== undefined ? rev.slots.main["*"] : rev.slots.main.content) : rev["*"]);
         if (facts[key(from)]) facts[key(from)].gear = parseGear(text);
       }
-      batch.forEach(function (n) { var k = key(n); delete gearPending[k]; if (facts[k] && !(facts[k].gear && facts[k].gear.v === 2)) facts[k].gear = { v: 2, tier: 0, stats: {} }; });
+      batch.forEach(function (n) { var k = key(n); delete gearPending[k]; if (facts[k] && !(facts[k].gear && facts[k].gear.v === 3)) facts[k].gear = { v: 3, tier: 0, stats: {} }; });
       saveFacts(); changed();
       if (gearQueue.length) gearTimer = setTimeout(flushGear, 1200);
     }).catch(function (e) { batch.forEach(function (n) { delete gearPending[key(n)]; }); status.lastError = "gear tiers: " + e.message; });

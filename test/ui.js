@@ -182,6 +182,22 @@ const { spawn } = require('child_process'); const path = require('path'), fs = r
   await page.hover('#list .item:has-text("Magic logs")');
   await page.click('#hpins button[data-pin="keep"]'); await page.waitForTimeout(300);
   c2 = await page.textContent('#hverdict'); ok('pin as always keep wins', /You pinned this as always keep/.test(c2), c2);
+  // best gear, from what has been seen in the bank; with skill levels on, only what can be worn
+  await page.click('#bestgear'); await page.waitForTimeout(600);
+  let gp = await page.evaluate(() => ({ open: document.getElementById('gearpanel').style.display !== 'none', listHidden: document.getElementById('list').style.display === 'none', text: document.getElementById('gearrows').textContent.replace(/\s+/g, ' ') }));
+  ok('Best gear (melee), 72 Attack: wears the rune scimitar, and says the noxious scythe is better but needs 90 Attack', gp.open && gp.listHidden && /Main hand\s*Rune scimitar tier 50/.test(gp.text) && /not wearable yet: Noxious scythe \(tier 90\) - needs 90 Attack/.test(gp.text) && /Limited to what your levels/.test(gp.text), JSON.stringify(gp));
+  await page.screenshot({ path: path.join(__dirname, '../docs/ui-best-gear.png') });
+  await page.click('#gearstyles button[data-style="magic"]'); await page.waitForTimeout(300);
+  gp = await page.evaluate(() => document.getElementById('gearrows').textContent.replace(/\s+/g, ' '));
+  ok('Best gear switches style: no melee weapons under Magic', !/Rune scimitar|Noxious/.test(gp) && /nothing seen in the bank/.test(gp), gp);
+  await page.click('#filters button[data-f="all"]');
+  ok('a list button closes the gear panel', await page.evaluate(() => document.getElementById('gearpanel').style.display === 'none' && document.getElementById('list').style.display !== 'none'));
+  // the bank closes: the overlay goes at once (a frozen overlay group only changes when refreshed)
+  await page.evaluate(() => { window.__bankRef = window.__ref; const w = window.__ref.width || 2560, h = window.__ref.height || 1351; const id = new A1lib.ImageData(w, h); for (let q = 0; q < id.data.length; q += 4) { id.data[q] = 60; id.data[q + 1] = 120 + (q % 97); id.data[q + 2] = 40; id.data[q + 3] = 255; } window.__ref = new A1lib.ImgRefData(id, 0, 0); window.__ov.length = 0; });
+  await page.waitForTimeout(1700);
+  const closed = await page.evaluate(() => { const ops = window.__ov.map(o => o[0]), c = ops.lastIndexOf('clear'); return { status: document.getElementById('status').textContent, clearThenRefresh: c >= 0 && ops[c + 1] === 'refresh', drawnAfter: ops.slice(c + 1).filter(o => o === 'rect' || o === 'text').length }; });
+  ok('bank closed: overlay cleared and refreshed within two reads, nothing drawn after: "' + closed.status + '"', /Open your bank/.test(closed.status) && closed.clearThenRefresh && closed.drawnAfter === 0, JSON.stringify(closed));
+  await page.evaluate(() => { window.__ref = window.__bankRef; }); await page.waitForTimeout(1600);
 
   await page.reload(); await page.waitForTimeout(400);
   const kept = await page.evaluate(() => ({ lib: Bankwise._lib().names().length, s: Bankwise._settings }));

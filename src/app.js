@@ -2,8 +2,8 @@
    draws value/verdict markers over the game and explains each verdict. */
 (function () {
   "use strict";
-  var VERSION = "0.8.4";
-  var READ_MS = 700, HOVER_MS = 250, OVERLAY_MS = 5000, OVERLAY_GROUP = "bankwise";
+  var VERSION = "0.8.5";
+  var READ_MS = 700, HOVER_MS = 250, OVERLAY_MS = 2500, OVERLAY_GROUP = "bankwise";
   function $(id) { return document.getElementById(id); }
   var store = {
     get: function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
@@ -110,6 +110,14 @@
     });
   }
   var GEAR_KINDS = { weapon: 1, armour: 1, ammo: 1, jewellery: 1 };
+  /* tier, class and slot from the curated ladders when the item is on one (the wiki's text is not always the
+     game's tier: it gave the dragonfire shield 50, the game and the ladder say 70), the wiki's stats on top */
+  function gearOf(name, fetch) {
+    var c = Gear.lookup(name), w = fetch ? Data.gearFor(name) : null;
+    if (!c) return w;
+    var g = { v: 3, tier: c.t || (w && w.tier) || 0, cls: c.st[0] === "all" ? (w && w.cls) || "" : c.st[0], slot: (w && w.slot) || c.s, type: w && w.type || "", stats: w && w.stats || {}, value: w && w.value, alchable: w ? w.alchable : null, curated: true };
+    return g;
+  }
   function info(name, forCard) {
     var it = Data.describe(name);
     it.kind = Kinds.kindOf(name, it.cats);
@@ -117,7 +125,8 @@
     it.upgradeable = Kinds.upgradeable(name);
     /* the item page's own text (stats, shop value, alchable) is only fetched when it can matter:
        for the card of a piece of gear, for the outgrown-gear rule, and before telling anyone to destroy something */
-    if ((forCard && GEAR_KINDS[it.kind]) || (settings.useSkills && profile && profile.levels && it.tradeable && !it.upgradeable && (it.kind === "weapon" || it.kind === "armour"))) it.gear = Data.gearFor(name);
+    if (forCard && GEAR_KINDS[it.kind]) it.gear = gearOf(name, true);
+    else if (settings.useSkills && profile && profile.levels && it.tradeable && !it.upgradeable && (it.kind === "weapon" || it.kind === "armour")) it.gear = gearOf(name, !Gear.lookup(name));
     if (!it.gear && !it.alch && Verdict.judge(it, settings, profile, Kinds).id === "destroy") it.gear = Data.gearFor(name);
     it.verdict = Verdict.judge(it, settings, profile, Kinds);
     if (it.verdict.id === "destroy" && it.gear === null) it.verdict = { id: "review", tag: "", reason: it.verdict.reason + " Checking whether it can be high alched first..." };
@@ -127,6 +136,47 @@
   }
 
   try { localStorage.removeItem("bankwise.bank.v1"); } catch (e) { /* 0.7.0 kept a running bank total here; the feature is gone */ }
+
+  /* ---------- what is in the bank (names only) ---------- */
+  /* The app only ever sees the part of the bank on screen, so "best gear" works from a record of every
+     item it has recognised there, with the day it last saw it. */
+  var seen = loadJSON("bankwise.seen.v1", {}), seenDirty = false, seenSavedAt = 0;
+  function noteSeen(r) {
+    var day = Math.floor(Date.now() / 864e5);
+    r.slots.forEach(function (s) { if (s.covered || !named(s)) return; if (seen[s.id.name] !== day) { seen[s.id.name] = day; seenDirty = true; } });
+    if (seenDirty && Date.now() - seenSavedAt > 5000) { seenDirty = false; seenSavedAt = Date.now(); store.set("bankwise.seen.v1", JSON.stringify(seen)); }
+  }
+
+  /* ---------- best gear ---------- */
+  var gearStyle = "melee", gearOpen = false;
+  function renderGear() {
+    if (!gearOpen) return;
+    var names = Object.keys(seen), pending = 0, pieces = [], useLevels = settings.useSkills && profile && profile.levels ? profile.levels : null;
+    names.forEach(function (n) {
+      var p = Gear.describe(n, null);
+      if (!p) { var kd = Kinds.kindOf(n, (Data.describe(n).cats) || []); if (!GEAR_KINDS[kd]) return; var w = Data.gearFor(n); if (w === null) { pending++; return; } p = Gear.describe(n, w); }
+      if (p) pieces.push(p);
+    });
+    var best = Gear.best(pieces, gearStyle, useLevels), html = "";
+    Gear.SLOTS.forEach(function (sl) {
+      var o = best[sl[0]];
+      if (!o.best && !o.locked && (sl[0] === "ammo" && gearStyle !== "ranged")) return;
+      html += '<div class="gearrow"><span class="gslot">' + sl[1] + "</span><span class='gname'>" +
+        (o.best ? '<a href="#" class="ext" data-url="' + esc(Data.wikiUrl(o.best.name)) + '">' + esc(o.best.name) + "</a>" + (o.best.tier ? ' <span class="qty">tier ' + o.best.tier + "</span>" : "") : '<span class="qty">nothing seen in the bank</span>') +
+        (o.locked ? '<div class="glocked">better, not wearable yet: ' + esc(o.locked.name) + (o.locked.tier ? " (tier " + o.locked.tier + ")" : "") + " - needs " + esc(o.locked.needs.join(", ")) + "</div>" : "") + "</span></div>";
+    });
+    html += '<div class="hint">From the ' + pieces.length + " pieces of gear Bankwise has recognised among the " + names.length + " items seen in your bank" + (pending ? " (still looking up " + pending + ")" : "") +
+      ". Scroll through your tabs so it has seen everything; what you are wearing is not counted. " + (useLevels ? "Limited to what your levels let you wear." : "Turn on skill levels in Settings to limit this to what you can wear.") +
+      ' The two-handed and the main + off-hand rows are alternatives. <a href="#" id="seenreset">forget what was seen</a></div>';
+    if (html !== $("gearrows")._html) { $("gearrows").innerHTML = html; $("gearrows")._html = html; }
+    Array.prototype.forEach.call($("gearstyles").querySelectorAll("button"), function (b) { b.className = b.getAttribute("data-style") === gearStyle ? "on" : ""; });
+  }
+  function showGear(open) {
+    gearOpen = open;
+    $("gearpanel").style.display = open ? "" : "none"; $("list").style.display = open ? "none" : ""; $("bestgear").className = open ? "on" : "";
+    Array.prototype.forEach.call($("filters").querySelectorAll("button[data-f]"), function (o) { o.className = !open && o.getAttribute("data-f") === filter ? "on" : ""; });
+    renderGear();
+  }
 
   /* ---------- overlay ---------- */
   var COL = null;
@@ -141,7 +191,8 @@
   function overlayOk() { return window.alt1 && alt1.permissionOverlay && settings.overlay; }
   function clearOverlay() {
     if (!window.alt1 || !alt1.permissionOverlay || !overlaySig) return;
-    try { alt1.overLaySetGroup(OVERLAY_GROUP); alt1.overLayClearGroup(OVERLAY_GROUP); alt1.overLaySetGroup(""); } catch (e) { /* older Alt1 */ }
+    /* the group is frozen between draws, so a clear only shows once the group is refreshed */
+    try { alt1.overLaySetGroup(OVERLAY_GROUP); alt1.overLayClearGroup(OVERLAY_GROUP); if (alt1.overLayRefreshGroup) alt1.overLayRefreshGroup(OVERLAY_GROUP); alt1.overLaySetGroup(""); } catch (e) { /* older Alt1 */ }
     overlaySig = "";
   }
   function drawOverlay() {
@@ -205,8 +256,16 @@
     }
     lastError = "";
     identifyAll(r, mousePos());
+    /* the reader fell back on the old lattice, and what sits in the slots is no longer what was there: the bank has closed */
+    if (r.grid.reused && view) {
+      var was = {}, gone = 0, had = 0;
+      view.slots.forEach(function (s) { if (sure(s)) was[posKey(s)] = 1; });
+      r.slots.forEach(function (s) { if (was[posKey(s)] && !s.covered) { had++; if (!sure(s)) gone++; } });
+      if (had >= 4 && gone > 0.3 * had) { Reader.reset(); view = null; hoverSlot = null; clearOverlay(); render(); setStatus(MESSAGES["no-bank"], false); return; }
+    }
     guessUnknown(r);
     readStacks(r);
+    noteSeen(r);
     view = r;
     render(); drawOverlay();
   }
@@ -506,8 +565,18 @@
     confidentGuesses().forEach(function (s) { var src = clean[posKey(s)] || s; if (lib.add(s.id.name, src.patch, "wiki-accepted", src.shifts)) { n++; Data.factsFor(s.id.name); } });
     if (n) { libVersion++; saveLibrary(); overlaySig = ""; tick(); }
   });
+  $("bestgear").addEventListener("click", function () { showGear(!gearOpen); });
+  Array.prototype.forEach.call($("gearstyles").querySelectorAll("button"), function (b) { b.addEventListener("click", function () { gearStyle = b.getAttribute("data-style"); renderGear(); }); });
+  $("gearpanel").addEventListener("click", function (e) {
+    var el = e.target;
+    if (el.id === "seenreset") { e.preventDefault(); seen = {}; store.set("bankwise.seen.v1", "{}"); if (view) noteSeen(view); $("gearrows")._html = ""; renderGear(); return; }
+    while (el && el !== this && !(el.getAttribute && el.getAttribute("data-url"))) el = el.parentNode;
+    if (!el || el === this) return;
+    e.preventDefault();
+    try { if (window.alt1 && alt1.openBrowser) alt1.openBrowser(el.getAttribute("data-url")); else window.open(el.getAttribute("data-url"), "_blank"); } catch (err) { /* nothing to do */ }
+  });
   Array.prototype.forEach.call($("filters").querySelectorAll("button[data-f]"), function (b) {
-    b.addEventListener("click", function () { filter = b.getAttribute("data-f"); Array.prototype.forEach.call($("filters").querySelectorAll("button[data-f]"), function (o) { o.className = o === b ? "on" : ""; }); if (view) renderList(); });
+    b.addEventListener("click", function () { if (gearOpen) showGear(false); filter = b.getAttribute("data-f"); Array.prototype.forEach.call($("filters").querySelectorAll("button[data-f]"), function (o) { o.className = o === b ? "on" : ""; }); if (view) renderList(); });
   });
   $("list").addEventListener("mouseover", function (e) {
     var el = e.target; while (el && el !== this && !el.getAttribute("data-i")) el = el.parentNode;
@@ -667,7 +736,8 @@
   /* ---------- start ---------- */
   $("version").textContent = "v" + VERSION;
   applySettingsToUI();
-  Data.onChange(function () { overlaySig = ""; if (view) { render(); drawOverlay(); } });
+  Data.onChange(function () { overlaySig = ""; if (view) { render(); drawOverlay(); } renderGear(); });
+  fetch("./data/gear.json?v=" + VERSION).then(function (r) { return r.ok ? r.json() : null; }).then(function (j) { if (j) { Gear.load(j); overlaySig = ""; renderGear(); } }).catch(function () { /* best gear then works from the wiki alone */ });
   Data.loadPrices();
   /* the wiki icon library: this computer's own build first, else the one shipped with the app */
   WikiBuild.loadLocal().then(function (raw) {
@@ -693,5 +763,5 @@
   render(); tick();
   setInterval(tick, READ_MS);
   setInterval(hoverTick, HOVER_MS);
-  window.Bankwise = { _redraw: function () { overlaySig = ""; drawOverlay(); }, _wiki: function () { return wiki; }, _setWiki: setWiki, _view: function () { return view; }, _lib: function () { return lib; }, _teach: teach, _tick: tick, _settings: settings, cleanName: cleanName };
+  window.Bankwise = { _seen: function () { return seen; }, _redraw: function () { overlaySig = ""; drawOverlay(); }, _wiki: function () { return wiki; }, _setWiki: setWiki, _view: function () { return view; }, _lib: function () { return lib; }, _teach: teach, _tick: tick, _settings: settings, cleanName: cleanName };
 })();
