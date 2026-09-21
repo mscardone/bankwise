@@ -8,7 +8,7 @@ An [Alt1 Toolkit](https://runeapps.org/alt1) app for RuneScape 3 that reads your
 
 It only reads the screen and draws markers. It never clicks, types or moves anything in the game.
 
-> **Status: v0.4.0.** Bank reading, item matching and tooltip reading are tested on real Alt1
+> **Status: v0.5.0.** Bank reading, item matching and tooltip reading are tested on real Alt1
 > captures (items match pixel-for-pixel between captures). The wiki lookups and the RuneMetrics
 > lookup have not worked live yet. See "Not proven yet" below.
 
@@ -24,7 +24,8 @@ The app needs the **pixel**, **overlay** and **game state** permissions (game st
 
 ## Using it
 
-1. Open your bank. Items the app does not know get a red box. It starts from the starter library in `data/seed-library.json` when the app ships one; otherwise from nothing.
+0. Once, in Settings, press **Build from the wiki**: the app fetches the wiki's icon for every item (a few minutes) so it can guess items it has never been taught. A guess has a thin amber outline and says "probably"; hovering it confirms it.
+1. Open your bank. Items the app does not know and cannot guess get a red box. It starts from the starter library in `data/seed-library.json` when the app ships one; otherwise from nothing.
 2. Sweep your mouse across the items. When the game shows an item's name, Bankwise reads it and remembers what that item looks like - permanently. A few minutes covers a whole bank, and each item only ever needs doing once.
 3. Known items lose their box and get:
    - a coloured bar for value: green 1k+, teal 10k+, blue 100k+, purple 1m+, gold 10m+ (per item, not per stack);
@@ -51,6 +52,7 @@ The app needs the **pixel**, **overlay** and **game state** permissions (game st
 - `src/data.js` fetches the wiki's Grand Exchange dump once a day and each item's wiki categories the first time it is seen. `src/kinds.js` turns name + categories into one of 28 kinds and maps kinds to tabs. `src/verdict.js` is the keep/sell/destroy rule list. `src/runemetrics.js` is the optional profile lookup.
 - `src/tooltip.js` finds the game's tooltip (since the 2026 interface it is a very dark brown box, not the pure black one Alt1's stock finder looks for), climbs to its top panel and reads the item name, which the game draws in its own colour, with Alt1's chat fonts (12-18pt tried; 14pt is the one at default scale).
 - `src/reader.js` also keeps the slot lattice steady between reads: a tooltip hides whole rows and nudges the fit by a pixel, so rows and columns are carried over from the previous read while most of them still line up.
+- `src/wikilib.js` guesses unknown items from the RuneScape Wiki's icons. Those are trimmed and not pixel-identical to the game's, so both sides are anchored on their own content (bottom edge, middle of the bottom 12 rows) and compared by average colour difference; rows under the stack number are ignored. `src/wikibuild.js` builds that icon library in the player's browser from a wiki category, keeps it in IndexedDB, and can export `data/wiki-icons.json` + `.bin` to ship with the app. A tooltip name is refused when the wiki is sure the slot is a different item.
 - `vendor/` holds the official Alt1 libraries (`a1lib`, `ocr`, four chat fonts) from the `alt1` npm package, unmodified. No build step.
 
 ## Not proven yet

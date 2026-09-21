@@ -5,7 +5,7 @@
 <title>Bankwise</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="icon" href="./icon.png">
-<link rel="stylesheet" href="./style.css?v=0.4.0">
+<link rel="stylesheet" href="./style.css?v=0.5.0">
 </head>
 <body>
 <header>
@@ -52,7 +52,7 @@
 
   <div id="legend">
     <span><i class="sw red"></i>hover to teach</span>
-    <span><i class="sw amber"></i>unsure / shares an icon</span>
+    <span><i class="sw amber"></i>guess / unsure / shares an icon</span>
     <span><i class="sw t1"></i>1k</span><span><i class="sw t2"></i>10k</span><span><i class="sw t3"></i>100k</span><span><i class="sw t4"></i>1m</span><span><i class="sw t5"></i>10m+</span>
     <span><b>J</b> junk</span><span><b>D</b> Diango</span><span><b>Q</b> quest done</span><span><b>K</b> quest keep</span>
   </div>
@@ -84,6 +84,16 @@
     </details>
   </div>
 
+  <h2>Wiki icons (guesses)</h2>
+  <div class="hint">The RuneScape Wiki has a picture of nearly every item. They are not pixel-for-pixel what the game draws, so they are used to guess: a guessed item gets a thin amber outline and "probably", and hovering it confirms it. Building takes a few minutes, once, and fetches every item icon from the wiki.</div>
+  <div id="wikistatus" class="hint ok"></div>
+  <div class="row">wiki category <input id="wikicat" type="text" value="Items" spellcheck="false" style="width:110px"></div>
+  <div class="btns">
+    <button id="wikibuild">Build from the wiki</button>
+    <button id="wikidownload" style="display:none" title="Two files to put in the app's data folder so every user gets the guesses without building">Download for the app's data folder</button>
+    <button id="wikiclear" style="display:none">Remove</button>
+  </div>
+
   <h2>Item library</h2>
   <div id="libstatus" class="hint"></div>
   <div class="btns">
@@ -102,19 +112,21 @@
   <pre id="dbgout" style="display:none"></pre>
 </footer>
 
-<script src="./vendor/a1lib.js?v=0.4.0"></script>
-<script src="./vendor/ocr.js?v=0.4.0"></script>
-<script src="./vendor/font-chat-12pt.js?v=0.4.0"></script>
-<script src="./vendor/font-chat-14pt.js?v=0.4.0"></script>
-<script src="./vendor/font-chat-16pt.js?v=0.4.0"></script>
-<script src="./vendor/font-chat-18pt.js?v=0.4.0"></script>
-<script src="./src/reader.js?v=0.4.0"></script>
-<script src="./src/tooltip.js?v=0.4.0"></script>
-<script src="./src/library.js?v=0.4.0"></script>
-<script src="./src/data.js?v=0.4.0"></script>
-<script src="./src/kinds.js?v=0.4.0"></script>
-<script src="./src/verdict.js?v=0.4.0"></script>
-<script src="./src/runemetrics.js?v=0.4.0"></script>
-<script src="./src/app.js?v=0.4.0"></script>
+<script src="./vendor/a1lib.js?v=0.5.0"></script>
+<script src="./vendor/ocr.js?v=0.5.0"></script>
+<script src="./vendor/font-chat-12pt.js?v=0.5.0"></script>
+<script src="./vendor/font-chat-14pt.js?v=0.5.0"></script>
+<script src="./vendor/font-chat-16pt.js?v=0.5.0"></script>
+<script src="./vendor/font-chat-18pt.js?v=0.5.0"></script>
+<script src="./src/reader.js?v=0.5.0"></script>
+<script src="./src/tooltip.js?v=0.5.0"></script>
+<script src="./src/library.js?v=0.5.0"></script>
+<script src="./src/wikilib.js?v=0.5.0"></script>
+<script src="./src/wikibuild.js?v=0.5.0"></script>
+<script src="./src/data.js?v=0.5.0"></script>
+<script src="./src/kinds.js?v=0.5.0"></script>
+<script src="./src/verdict.js?v=0.5.0"></script>
+<script src="./src/runemetrics.js?v=0.5.0"></script>
+<script src="./src/app.js?v=0.5.0"></script>
 </body>
 </html>

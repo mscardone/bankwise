@@ -12,7 +12,25 @@ const { spawn } = require('child_process'); const path = require('path'), fs = r
   const errs = []; page.on('pageerror', e => errs.push(e.message));
   // canned wiki data
   await ctx.route('**/rs_dump.json', r => r.fulfill({ json: { '%LAST_UPDATE%': 1, 1513: { id: 1513, name: 'Magic logs', price: 412, highalch: 192, value: 320 }, 2: { id: 2, name: 'Rusty sword', price: 60, highalch: 15, value: 25 }, 3: { id: 3, name: 'Noxious scythe', price: 61000000, highalch: 300000, value: 500000 } } }));
+  // a pretend wiki: 14 items whose "icons" are sprites cut out of the real capture (trimmed, transparent, a little noisy)
+  const { PNG } = require('pngjs'); const loadPng = require('../tools/pngload.js'); const ReaderN = require('../src/reader.js')(null);
+  const capBuf = loadPng(path.join(__dirname, 'capture-plain.png')), capRead = ReaderN.readBuffer(capBuf), sprites = {}; let seedR = 3;
+  capRead.slots.forEach(sl => {
+    if (Object.keys(sprites).length >= 14) return;
+    for (let y = 0; y < 20; y++) for (let x = 0; x < sl.w; x++) { const q = ((sl.y + y) * capBuf.width + sl.x + x) * 4; if (capBuf.data[q] > 200 && capBuf.data[q + 1] > 200 && capBuf.data[q + 2] < 80) return; }
+    const isC = (x, y) => { const q = ((sl.y + y) * capBuf.width + sl.x + x) * 4; return Math.abs(capBuf.data[q] - 51) + Math.abs(capBuf.data[q + 1] - 46) + Math.abs(capBuf.data[q + 2] - 41) > 24; };
+    let x0 = 99, x1 = -1, y0 = 99, y1 = -1; for (let y = 0; y < sl.h; y++) for (let x = 0; x < sl.w; x++) if (isC(x, y)) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+    if (x1 < 0) return; const png = new PNG({ width: x1 - x0 + 1, height: y1 - y0 + 1 });
+    for (let y = 0; y < png.height; y++) for (let x = 0; x < png.width; x++) { const q = ((sl.y + y0 + y) * capBuf.width + sl.x + x0 + x) * 4, o = (y * png.width + x) * 4; for (let k = 0; k < 3; k++) { seedR = (seedR * 1103515245 + 12345) % 2147483648; png.data[o + k] = Math.max(0, Math.min(255, capBuf.data[q + k] + (seedR / 2147483648 - 0.5) * 12)); } png.data[o + 3] = isC(x0 + x, y0 + y) ? 255 : 0; }
+    const name = 'Test item ' + (Object.keys(sprites).length + 1); sprites[name] = { png: PNG.sync.write(png), x: sl.x, y: sl.y };
+  });
+  await ctx.route('**/runescape.wiki/images/**', r => { const nm = decodeURIComponent(r.request().url().split('/images/')[1]).replace(/_/g, ' ').replace(/\.png$/, ''); const sp = sprites[nm]; if (sp) r.fulfill({ body: sp.png, contentType: 'image/png', headers: { 'access-control-allow-origin': '*' } }); else r.fulfill({ status: 404, body: 'no' }); });
   await ctx.route('**/runescape.wiki/api.php**', r => {
+    if (/generator=categorymembers/.test(r.request().url())) {
+      const all = Object.keys(sprites), second = /gcmcontinue=/.test(r.request().url()), part = second ? all.slice(7) : all.slice(0, 7), pages = {};
+      part.forEach((t, k) => { pages[100 + k + (second ? 50 : 0)] = { title: t, images: [{ title: 'File:' + t + '.png' }, { title: 'File:' + t + ' detail.png' }, { title: 'File:Coins 1000.png' }] }; });
+      return r.fulfill({ json: second ? { query: { pages } } : { continue: { gcmcontinue: 'page|x', continue: 'gcmcontinue||' }, query: { pages } }, headers: { 'access-control-allow-origin': '*' } });
+    }
     const titles = decodeURIComponent((r.request().url().match(/titles=([^&]*)/) || [])[1] || '').split('|'); const pages = {}; let i = 1;
     titles.forEach(t => { if (/boits/i.test(t)) { pages[i++] = { title: t, missing: '' }; return; } const cats = /santa/i.test(t) ? ['Reclaimable from Diango', 'Holiday items'] : /commorb/i.test(t) ? ['Quest items', 'While Guthix Sleeps'] : /logs/i.test(t) ? ['Logs', 'Firemaking'] : ['Items']; pages[i++] = { title: t, categories: cats.map(c => ({ title: 'Category:' + c })) }; });
     r.fulfill({ json: { query: { pages } }, headers: { 'access-control-allow-origin': '*' } });
@@ -122,6 +140,26 @@ const { spawn } = require('child_process'); const path = require('path'), fs = r
   ok('mouse kept on a free-to-play item: learned ' + JSON.stringify(st.names) + ', card says "' + st.card + '", ' + st.n + ' items still on screen', st.names.length === 1 && st.names[0] === 'Nature rune' && st.hovered && st.hovered.state === 'known' && st.card === 'Nature rune' && st.n === 193 && e5.length === 0, JSON.stringify(st) + e5.join('|'));
   await p5.uncheck('#teach'); await p5.evaluate(() => { Bankwise._lib().forget('Nature rune'); }); await p5.waitForTimeout(1500);
   ok('teach switched off: hovering learns nothing', (await p5.evaluate(() => Bankwise._lib().names().length)) === 0);
+
+  // wiki guesses: build the icon library from the pretend wiki, see guesses, confirm one, refuse a mismatch
+  const p6 = await ctx.newPage(); const e6 = []; p6.on('pageerror', e => e6.push(e.message)); await p6.addInitScript(alt1Init);
+  await p6.goto('http://127.0.0.1:8378/index.html'); await p6.evaluate(async () => { localStorage.clear(); await WikiBuild.clearLocal(); }); await p6.reload();
+  await p6.evaluate(() => { window.__tip = ''; window.__realTip = window.TipReader.read; window.TipReader.read = (b, x, y) => window.__tip ? { area: { x: 0, y: 0, width: 1, height: 1 }, text: window.__tip, font: 'test' } : null; });
+  await setCap(p6, 'capture-plain.png', -1); await p6.waitForTimeout(1500);
+  await p6.click('#opensettings'); await p6.click('#wikibuild'); await p6.waitForTimeout(2500);
+  const ws = await p6.textContent('#wikistatus'); ok('builds the icon library from the wiki category (2 pages of results, detail/other files skipped): "' + ws.trim() + '"', /^14 wiki icons/.test(ws.trim()), ws);
+  await p6.click('#closesettings'); await p6.waitForTimeout(2500);
+  const gs = await p6.evaluate((sprites) => { const v = Bankwise._view(); let right = 0, wrongG = 0; Object.keys(sprites).forEach(n => { const sl = v.slots.filter(q => q.x === sprites[n].x && q.y === sprites[n].y)[0]; if (sl && sl.id.state === 'guess' && (sl.id.name === n || sl.id.alts.includes(n))) right++; else wrongG++; }); return { right, wrongG, guessed: v.slots.filter(q => q.id.state === 'guess').length, counts: document.getElementById('counts').textContent }; }, Object.fromEntries(Object.entries(sprites).map(([n, v]) => [n, { x: v.x, y: v.y }])));
+  ok('unknown items are guessed from the wiki icons: ' + gs.right + ' of 14 right (' + gs.counts.replace(/\s+/g, ' ').trim() + ')', gs.right >= 13, JSON.stringify(gs));
+  const t1 = sprites['Test item 1'], t2 = sprites['Test item 2'];
+  await p6.evaluate(([x, y]) => { window.alt1.mousePosition = ((x + 20) << 16) + (y + 22); window.__tip = 'Test item 1'; }, [t1.x, t1.y]); await p6.waitForTimeout(1300);
+  await p6.evaluate(([x, y]) => { window.alt1.mousePosition = ((x + 20) << 16) + (y + 22); window.__tip = 'Test item 9'; }, [t2.x, t2.y]); await p6.waitForTimeout(1300);
+  await p6.evaluate(() => { window.alt1.mousePosition = -1; window.__tip = ''; }); await p6.waitForTimeout(1200);
+  const after = await p6.evaluate(([a, b]) => { const v = Bankwise._view(), f = p => v.slots.filter(q => q.x === p[0] && q.y === p[1])[0].id; return { names: Bankwise._lib().names(), s1: f(a).state, s2: f(b).state + ' ' + f(b).name }; }, [[t1.x, t1.y], [t2.x, t2.y]]);
+  ok('hovering a guess confirms it (' + after.s1 + '); a tooltip naming a different wiki item is refused, slot stays "' + after.s2 + '"', after.names.length === 1 && after.names[0] === 'Test item 1' && after.s1 === 'known' && /^guess Test item 2/.test(after.s2) && e6.length === 0, JSON.stringify(after) + e6.join('|'));
+  await p6.screenshot({ path: path.join(__dirname, '../docs/ui-guesses.png') });
+  await p6.reload(); await p6.waitForTimeout(1200);
+  ok('the icon library is still there after a reload', (await p6.evaluate(() => Bankwise._wiki().n)) === 14);
 
   // plain browser, no Alt1
   const p2 = await ctx.newPage(); const e2 = []; p2.on('pageerror', e => e2.push(e.message));

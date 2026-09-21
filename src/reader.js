@@ -354,7 +354,7 @@
 
   var api = {
     _capture: function () { return A1lib.captureHoldFullRs(); }, /* tests swap this out */
-    PW: PW, PH: PH, BG: BG,
+    PW: PW, PH: PH, BG: BG, NUM_BAND: NUM_BAND,
     findAreas: findAreas, fitGrid: fitGrid, readBuffer: readBuffer, read: read, grab: grab, fullCapture: fullCapture, reset: function () { lastArea = null; misses = 0; }, patch: patch, ink: ink, slotRect: slotRect, slotImage: slotImage, resample: resample
   };
   return api;

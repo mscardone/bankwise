@@ -2,7 +2,7 @@
    draws value/verdict markers over the game and explains each verdict. */
 (function () {
   "use strict";
-  var VERSION = "0.4.0";
+  var VERSION = "0.5.0";
   var READ_MS = 700, HOVER_MS = 250, OVERLAY_MS = 5000, OVERLAY_GROUP = "bankwise";
   function $(id) { return document.getElementById(id); }
   var store = {
@@ -36,7 +36,27 @@
   }
 
   /* ---------- identify ---------- */
-  function named(s) { return s.id.state === "known" || s.id.state === "twin"; }   /* twin = identical icon shared by several items */
+  /* twin = identical icon shared by several items; guess = "probably X", from the wiki's icons */
+  function named(s) { return s.id.state === "known" || s.id.state === "twin" || s.id.state === "guess"; }
+  function sure(s) { return s.id.state === "known" || s.id.state === "twin"; }
+  var wiki = new WikiLib.IconLibrary(), wikiInfo = "not loaded", wikiRaw = null, guessCache = {}, building = null;
+  function setWiki(raw, from) {
+    wikiRaw = raw; guessCache = {};
+    if (raw && raw.names && raw.names.length) { wiki.load(raw.names, raw.files, raw.patches); wikiInfo = raw.names.length + " wiki icons (" + from + ", built " + new Date(raw.at).toLocaleDateString() + ")"; }
+    else { wiki = new WikiLib.IconLibrary(); wikiInfo = "none - build it in Settings"; }
+    overlaySig = ""; if (typeof renderWikiStatus === "function") renderWikiStatus();
+  }
+  /* wiki guesses for the slots the library does not know; a few per read so the app never stalls */
+  function guessUnknown(r) {
+    if (!wiki.n) return;
+    var budget = 10;
+    r.slots.forEach(function (s) {
+      if (s.covered || sure(s) || s.id.state === "covered") return;
+      var g = guessCache[s.hash];
+      if (g === undefined) { if (budget-- <= 0) return; g = guessCache[s.hash] = wiki.guess(WikiLib.slotView(r.buf, s, r.off, Reader.NUM_BAND)) || null; }
+      if (g) s.id = { state: "guess", name: g.name, d: g.d, alts: g.alts, rival: s.id.name || null, rivalD: s.id.d };
+    });
+  }
   function hash(pt) { var h = 2166136261, i; for (i = 0; i < pt.length; i++) { h ^= pt[i]; h = (h * 16777619) >>> 0; } return h.toString(36); }
   function posKey(s) { return s.x + "," + s.y; }
   function overlaps(s, a) { return a && s.x < a.x + a.width + 4 && s.x + s.w > a.x - 4 && s.y < a.y + a.height + 4 && s.y + s.h > a.y - 4; }
@@ -95,6 +115,7 @@
         if (s.id.state === "unknown") { alt1.overLayRect(c.red, s.x + inset, s.y + inset, s.w - 2 * inset, s.h - 2 * inset, OVERLAY_MS, 2); return; }
         if (s.id.state === "unsure") { alt1.overLayRect(c.amber, s.x + inset, s.y + inset, s.w - 2 * inset, s.h - 2 * inset, OVERLAY_MS, 2); return; }
         var it = info(s.id.name);
+        if (s.id.state === "guess") alt1.overLayRect(c.amber, s.x + inset, s.y + inset, s.w - 2 * inset, s.h - 2 * inset, OVERLAY_MS, 1);   /* thin amber = probably, hover to confirm */
         if (s.id.state === "twin") alt1.overLayRect(c.amber, s.x + inset, s.y + inset, 4, 4, OVERLAY_MS, 2);      /* shares its icon with other items */
         if (c[it.tier.id]) alt1.overLayRect(c[it.tier.id], s.x + inset, s.y + s.h - inset - 2, s.w - 2 * inset, 2, OVERLAY_MS, 2);
         if (it.verdict.tag) {
@@ -130,6 +151,7 @@
     }
     lastError = "";
     identifyAll(r, mousePos());
+    guessUnknown(r);
     view = r;
     render(); drawOverlay();
   }
@@ -172,10 +194,17 @@
   }
   function teach(slot, name, force) {
     var src = clean[posKey(slot)] || slot, was = slot.id.state;
-    if (!force && named(slot) && slot.id.name === name) return;
+    if (!force && sure(slot) && slot.id.name === name) return;
     /* only a correction typed by the player removes what was there: different items can share one
        identical icon, and the tooltip naming one of them must not make the app forget the others */
     if (force && slot.id.name && slot.id.name !== name && slot.id.state !== "unknown") lib.unlearn(slot.id.name, src.patch);
+    /* the wiki is sure this is something else AND it looks nothing like the wiki's picture of the
+       name just read: the tooltip and the slot do not belong together (a stale tooltip, a shifted
+       grid) - do not poison the library; typing the name yourself still overrides this */
+    if (!force && wiki.n && view) {
+      var sv = WikiLib.slotView(view.buf, slot, view.off, Reader.NUM_BAND), own = wiki.distanceTo(name, sv), g = sv && wiki.guess(sv);
+      if (own !== null && own > 40 && g && g.name !== name && g.alts.indexOf(name) < 0) { tipWhy = "NOT learned: this slot looks like " + g.name + " (" + g.d.toFixed(1) + "), not like " + name + " (" + own.toFixed(1) + ")"; return; }
+    }
     var added = lib.add(name, src.patch, "taught", src.shifts);
     if (added || force || was === "twin") { libVersion++; lastTaught = name; saveLibrary(); Data.factsFor(name); overlaySig = ""; }
     /* the font reader confuses l and i ("Diamond boits"): if the wiki has no such item but does
@@ -193,10 +222,10 @@
   function slotImg(s) { if (!s._img && view && view.buf) { try { s._img = Reader.slotImage(view.buf, s, view.off); } catch (e) { s._img = ""; } } return s._img || ""; }
   function render() {
     if (!view) { $("counts").innerHTML = ""; $("list").innerHTML = '<div class="empty">Nothing to show until the bank is open.</div>'; $("list")._html = ""; renderCard(); return; }
-    var known = 0, unsure = 0, unknown = 0;
-    view.slots.forEach(function (s) { if (named(s)) known++; else if (s.id.state === "unsure") unsure++; else if (s.id.state !== "covered") unknown++; });
-    setStatus(unknown + unsure ? (settings.teach ? "Sweep your mouse over the boxed items so I can learn them." : "Learning is off. Turn on Teach to learn the boxed items.") : "Every item on screen is known.", false);
-    $("counts").innerHTML = "<span><b>" + view.slots.length + "</b> on screen</span><span><b>" + known + "</b> known</span><span><b>" + (unknown + unsure) + "</b> to teach</span><span><b>" + lib.names().length + "</b> in library</span>";
+    var known = 0, unsure = 0, unknown = 0, guessed = 0;
+    view.slots.forEach(function (s) { if (s.id.state === "guess") guessed++; else if (named(s)) known++; else if (s.id.state === "unsure") unsure++; else if (s.id.state !== "covered") unknown++; });
+    setStatus(unknown + unsure + guessed ? (settings.teach ? (unknown + unsure ? "Sweep your mouse over the boxed items so I can learn them." : "Amber items are guesses from the wiki. Hover one to confirm it.") : "Learning is off. Turn on teach to confirm guesses and learn the boxed items.") : "Every item on screen is known.", false);
+    $("counts").innerHTML = "<span><b>" + view.slots.length + "</b> on screen</span><span><b>" + known + "</b> known</span><span><b>" + guessed + "</b> guessed</span><span><b>" + (unknown + unsure) + "</b> to teach</span><span><b>" + lib.names().length + "</b> in library</span>";
     renderList(); renderCard();
   }
   function renderList() {
@@ -213,7 +242,7 @@
     var html = rows.map(function (r, i) {
       var img = slotImg(r.slot);
       if (r.teach) return '<div class="item" data-i="' + i + '"><div class="mini" style="background-image:url(' + img + ')"></div><div class="nm"><span class="chip ' + (r.slot.id.state === "unsure" ? "unsure" : "teach") + '">' + (r.slot.id.state === "unsure" ? "unsure" : "new") + "</span> " + (r.slot.id.state === "unsure" ? esc(r.slot.id.name) + "?" : "hover it in the bank") + "</div></div>";
-      return '<div class="item" data-i="' + i + '"><div class="mini" style="background-image:url(' + img + ')"></div><div class="nm">' + (r.it.verdict.id !== "keep" ? '<span class="chip ' + r.it.verdict.id + '">' + r.it.verdict.id + "</span> " : "") + esc(r.it.name) + '</div><div class="tabn">tab ' + r.it.tab.number + '</div><div class="pr ' + r.it.tier.id + '">' + Verdict.gp(r.it.price) + "</div></div>";
+      return '<div class="item" data-i="' + i + '"><div class="mini" style="background-image:url(' + img + ')"></div><div class="nm">' + (r.slot.id.state === "guess" ? '<span class="chip unsure">probably</span> ' : "") + (r.it.verdict.id !== "keep" ? '<span class="chip ' + r.it.verdict.id + '">' + r.it.verdict.id + "</span> " : "") + esc(r.it.name) + '</div><div class="tabn">tab ' + r.it.tab.number + '</div><div class="pr ' + r.it.tier.id + '">' + Verdict.gp(r.it.price) + "</div></div>";
     }).join("");
     html = html || '<div class="empty">Nothing in this filter.</div>';
     if (html !== $("list")._html) { $("list").innerHTML = html; $("list")._html = html; }   /* untouched when nothing changed: keeps scroll and hover steady */
@@ -238,6 +267,7 @@
     $("hname").style.color = nameColours[it.name] ? "rgb(" + nameColours[it.name].join(",") + ")" : "";
     $("hprice").innerHTML = it.price !== null ? "<b>" + Verdict.gp(it.price) + "</b> each" + (it.alch ? " &middot; alch " + Verdict.gp(it.alch) : "") : (it.tradeable === false ? "not tradeable" : "price not loaded");
     $("hverdict").innerHTML = '<span class="chip ' + it.verdict.id + '">' + it.verdict.id + "</span>" + esc(it.verdict.reason) +
+      (s.id.state === "guess" ? " <span class='twin'>A guess from the wiki's icon" + (s.id.alts && s.id.alts.length ? " (or " + esc(s.id.alts.join(", ")) + ")" : "") + ". Hover it in the bank to confirm.</span>" : "") +
       (s.id.state === "twin" ? " <span class='twin'>Same icon as " + esc(s.id.twins.filter(function (n) { return n !== it.name; }).join(", ")) + " - showing the one you last hovered.</span>" : "");
     $("htab").innerHTML = "Belongs in <b>tab " + it.tab.number + " &middot; " + esc(it.tab.name) + "</b> <span title='" + esc(it.cats.slice(0, 12).join(", ")) + "'>(" + esc(Kinds.KIND_LABEL[it.kind]) + ")</span>";
     $("hpins").style.visibility = "";
@@ -270,9 +300,33 @@
     $("template").value = settings.template; $("junkbelow").value = settings.junkBelow; $("goallevel").value = settings.goalLevel;
     $("usequests").checked = settings.useQuests; $("useskills").checked = settings.useSkills; $("useoverrides").checked = settings.useOverrides;
     $("overlay").checked = settings.overlay; $("teach").checked = settings.teach; $("rmuser").value = settings.rmUser;
-    renderTemplate(); renderLibStatus(); renderProfile();
+    renderTemplate(); renderLibStatus(); renderProfile(); renderWikiStatus();
   }
   function changed() { saveSettings(); overlaySig = ""; if (view) { render(); drawOverlay(); } renderProfile(); }
+
+  function renderWikiStatus() {
+    if (!$("wikistatus")) return;
+    $("wikistatus").textContent = building ? building : wikiInfo;
+    $("wikibuild").textContent = building ? "Stop" : (wiki.n ? "Rebuild from the wiki" : "Build from the wiki");
+    $("wikidownload").style.display = wikiRaw && wikiRaw.names && wikiRaw.names.length ? "" : "none";
+    $("wikiclear").style.display = wiki.n ? "" : "none";
+  }
+  var cancelBuild = false;
+  $("wikibuild").addEventListener("click", function () {
+    if (building) { cancelBuild = true; return; }
+    cancelBuild = false; building = "asking the wiki for the item list..."; renderWikiStatus();
+    WikiBuild.build({ category: $("wikicat").value.trim() || "Items", isCancelled: function () { return cancelBuild; }, onProgress: function (st) {
+      building = st.phase === "listing" ? "listing items: " + st.pages + " pages, " + st.files + " icons found..." : "fetching icons: " + st.done + " of " + st.files + " (" + st.kept + " usable)";
+      renderWikiStatus();
+    } }).then(function (raw) {
+      building = null;
+      if (!raw.names.length) { wikiInfo = "nothing usable came back"; renderWikiStatus(); return; }
+      setWiki(raw, cancelBuild ? "partial build on this computer" : "built on this computer");
+      return WikiBuild.save(raw).catch(function (e) { wikiInfo += " - could not be saved for next time: " + (e && e.message || e); renderWikiStatus(); });
+    }).catch(function (e) { building = null; wikiInfo = "build failed: " + (e && e.message || e); renderWikiStatus(); });
+  });
+  $("wikidownload").addEventListener("click", function () { if (wikiRaw) WikiBuild.download(wikiRaw); });
+  $("wikiclear").addEventListener("click", function () { WikiBuild.clearLocal().then(function () { setWiki(null, ""); }); });
 
   $("opensettings").addEventListener("click", function () { var open = $("settings").style.display === "none"; $("settings").style.display = open ? "" : "none"; $("main").style.display = open ? "none" : ""; $("opensettings").className = open ? "on" : ""; renderLibStatus(); });
   $("closesettings").addEventListener("click", function () { $("opensettings").click(); });
@@ -344,6 +398,7 @@
     lines.push("tooltip reader: " + (window.TipReader && window.OCR && window.Alt1Fonts ? "loaded" : "MISSING") + "   last read: " + JSON.stringify(tipRaw) + " (" + tipWhy + ")   last taught: " + JSON.stringify(lastTaught));
     lines.push("prices: " + Data.status.prices); lines.push("wiki facts: " + Data.status.facts); if (Data.status.lastError) lines.push("last data error: " + Data.status.lastError);
     lines.push("starter library: " + seedInfo);
+    lines.push("wiki icons: " + wikiInfo);
     lines.push("library: " + lib.names().length + " items, " + lib.samples.length + " samples" + (libSaveFailed ? "  SAVE FAILED" : ""));
     var r = null;
     try { r = Reader.read(); } catch (err) { lines.push("reader crashed: " + err.message); }
@@ -464,6 +519,11 @@
   applySettingsToUI();
   Data.onChange(function () { overlaySig = ""; if (view) { render(); drawOverlay(); } });
   Data.loadPrices();
+  /* the wiki icon library: this computer's own build first, else the one shipped with the app */
+  WikiBuild.loadLocal().then(function (raw) {
+    if (raw && raw.names && raw.names.length && raw.patches && raw.patches.length === raw.names.length * WikiLib.BYTES) return setWiki(raw, "built on this computer");
+    return WikiBuild.loadShipped(VERSION).then(function (shipped) { setWiki(shipped, "shipped with the app"); });
+  }).catch(function () { setWiki(null, ""); });
   /* a starter library shipped with the app, so nobody begins from nothing */
   fetch("./data/seed-library.json?v=" + VERSION).then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
     if (!j) return;
@@ -480,5 +540,5 @@
   render(); tick();
   setInterval(tick, READ_MS);
   setInterval(hoverTick, HOVER_MS);
-  window.Bankwise = { _view: function () { return view; }, _lib: function () { return lib; }, _teach: teach, _tick: tick, _settings: settings, cleanName: cleanName };
+  window.Bankwise = { _wiki: function () { return wiki; }, _setWiki: setWiki, _view: function () { return view; }, _lib: function () { return lib; }, _teach: teach, _tick: tick, _settings: settings, cleanName: cleanName };
 })();
