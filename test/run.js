@@ -185,6 +185,7 @@ console.log("real captures");
   ok("Diango items are marked Diango, not destroy; cheap junk is high alched", V2.judge({ name: "Santa hat", kind: "holiday", diango: true, cats: [], tradeable: false, price: null }, {}, null, K).id === "diango" && V2.judge({ name: "Rusty sword", kind: "weapon", cats: [], tradeable: true, price: 60, alch: 15 }, { junkBelow: 500 }, null, K).id === "alch" && V2.judge({ name: "Odd sword", kind: "weapon", cats: [], tradeable: true, price: 60, alch: 0 }, { junkBelow: 500 }, null, K).id === "sell");
   ok("teleport destinations: " + K.teleportsTo("Games necklace (8)").slice(0, 30) + "...", /Barbarian Outpost/.test(K.teleportsTo("Games necklace (8)")) && K.teleportsTo("Varrock teleport") === "Varrock" && /Ectofuntus/.test(K.teleportsTo("Ectophial")) && K.teleportsTo("Rune platebody") === "");
   ok("a quest reward that cannot be reclaimed is kept", V2.judge({ name: "Excalibur", kind: "keepsake", cats: ["Quest rewards"], tradeable: false, price: null }, {}, null, K).id === "keep");
+  ok("Geech Layout: charging items go with the tokens", tab("Artisanal gears") === 6 && tab("Silverhawk feathers") === 6 && tab("Silverhawk down") === 6 && tab("Divine charge") === 6 && tab("Piece of Het") === 6 && tab("Feather") === 5 && tab("Fletching cleaner") === 5 && tab("Spring cleaner 3000") === 5);
   ok("the other layouts are unchanged by the Geech name rules", K.tabFor("metal", "five", "Steel bar").number === 4 && K.tabFor("weapon", "pvm", "Polypore staff").number === 2);
 })();
 console.log(fails ? fails + " FAILED" : "all checks passed");

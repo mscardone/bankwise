@@ -48,7 +48,7 @@ const { spawn } = require('child_process'); const path = require('path'), fs = r
       titles.forEach(t => { pages[i++] = { title: t, revisions: [{ slots: { main: { '*': JSON.stringify(tables[t] || {}) } } }] }; });
       return r.fulfill({ json: { query: { pages } }, headers: { 'access-control-allow-origin': '*' } });
     }
-    titles.forEach(t => { if (/boits/i.test(t)) { pages[i++] = { title: t, missing: '' }; return; } const cats = /santa/i.test(t) ? ['Reclaimable from Diango', 'Holiday items'] : /commorb/i.test(t) ? ['Quest items', 'While Guthix Sleeps'] : /excalibur/i.test(t) ? ['Quest rewards', 'Items'] : /logs/i.test(t) ? ['Logs', 'Firemaking'] : ['Items']; pages[i++] = { title: t, categories: cats.map(c => ({ title: 'Category:' + c })), extract: t + ' is an item in the pretend wiki. It is used for testing the detail card.' }; });
+    titles.forEach(t => { if (/boits/i.test(t)) { pages[i++] = { title: t, missing: '' }; return; } const cats = /santa/i.test(t) ? ['Reclaimable from Diango', 'Holiday items'] : /commorb/i.test(t) ? ['Quest items', 'While Guthix Sleeps'] : /excalibur/i.test(t) ? ['Quest rewards', 'Items'] : /logs/i.test(t) ? ['Logs', 'Firemaking'] : ['Items']; pages[i++] = { title: t, categories: cats.map(c => ({ title: 'Category:' + c })), extract: t + ' is an item in the pretend wiki. It is used for testing the detail card. ' + 'This opening paragraph goes on for a good while so that it cannot fit. '.repeat(8) + 'Last sentence of the intro.' }; });
     r.fulfill({ json: { query: { pages } }, headers: { 'access-control-allow-origin': '*' } });
   });
   // the Cloudflare Worker: this player's RuneMetrics profile is private, so levels come from the hiscores table
@@ -143,6 +143,8 @@ const { spawn } = require('child_process'); const path = require('path'), fs = r
   await page.evaluate(() => { window.alt1.mousePosition = -1; window.__tip = ''; }); await page.waitForTimeout(2500);
   await page.hover('#list .item:has-text("Commorb")'); await page.waitForTimeout(1200); await page.hover('#list .item:has-text("Commorb")');
   let cq = await page.evaluate(() => ({ blurb: document.getElementById('hblurb').textContent, quests: document.getElementById('hquests').innerHTML, wiki: document.getElementById('hwiki').getAttribute('data-url'), shown: document.getElementById('hwiki').style.display !== 'none' }));
+  const clamp = await page.evaluate(() => { const el = document.getElementById('hblurb'), cs = getComputedStyle(el); return { h: el.clientHeight, full: el.scrollHeight, lines: cs.webkitLineClamp, text: el.textContent.length }; });
+  ok('card: the whole wiki intro is kept (' + clamp.text + ' chars) and shown as five lines ending in an ellipsis', clamp.lines === '5' && clamp.h <= 90 && clamp.full > clamp.h && clamp.text > 400, JSON.stringify(clamp));
   ok('card: two sentences from the wiki and a link to the item page', /is used for testing/.test(cq.blurb) && cq.shown && cq.wiki === 'https://runescape.wiki/w/Commorb', JSON.stringify(cq));
   ok('quest item: the card lists the quest with a link to its wiki page', /Needed for:/.test(cq.quests) && /data-url="https:\/\/runescape\.wiki\/w\/While_Guthix_Sleeps"/.test(cq.quests), cq.quests);
   await page.screenshot({ path: path.join(__dirname, '../docs/ui-card.png') });

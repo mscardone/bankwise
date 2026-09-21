@@ -104,11 +104,15 @@
         ["Magic", ["runes", "teleport", "potion", "jewellery"], "Runes, runecrafting items, teleports, jewellery, potions, magic armour and weapons"],
         ["Gathering Skills", ["metal", "wood", "seeds", "archaeology", "divination", "tools", "outfit"], "Mining, Woodcutting, Farming, Archaeology, Hunter, Fishing, Divination"],
         ["Crafting Skills", ["gems", "hides", "herblore", "invention"], "Crafting, Fletching, Construction, Smithing, Cooking, Herblore, Invention"],
-        ["D&D, Minigames, Tokens", ["clue", "currency", "keys"], "Clues, D&D and minigame rewards, tokens, keys, lamps and stars"],
+        ["D&D, Minigames, Tokens", ["clue", "currency", "keys"], "Clues, D&D and minigame rewards, tokens, keys, lamps and stars, and charges for other items (artisanal gears, silverhawk feathers)"],
         ["Quest Items", ["quest"], "Quest items"],
         ["Keepsakes, Cosmetics, and Seasonal", ["holiday", "keepsake"], "Seasonal, discontinued and cosmetic items, and quest rewards that cannot be reclaimed"]],
       rules: [
+        /* things whose only job is to charge or fuel another item live with the tokens */
+        [null, /^pieces? of het$|^artisanal gears$|silverhawk (feathers|down)|^divine charge|charge pack|^(metallic )?dragon trinkets$|\bcharges?$/i, 5],
         [null, /deathwarden|deathdealer|death guard|skull lantern|soulbound lantern|necromancer|omni guard|deathstorm|\bmemento$/i, 1],
+        /* Invention devices that tidy up while you skill or fight (fletching cleaner, spring cleaner...): with Invention, in the making tab */
+        [null, /\bcleaner( \d+)?$/i, 4],
         [null, /^pot of flour$|^bucket of milk$|^egg$|\bspices?$|^cinnamon$|\bdye$|limestone|marble block|\bbrick$/i, 4],
         [["misc", "tools"], /fishing|\brod$|\bbait$|vine worm|^roe$|fish offcuts/i, 3],
         [["weapon", "armour"], /\bstaff\b|battlestaff|\bwand\b|\borb$|grimoire|\bmystic\b|wizard|\brobe|subjugation|ahrim|virtus|seismic|tectonic|ganodermic|grifolic|fungal|infinity|\blunar\b|batwing|spider silk|polypore|cryptbloom|splitbark|skeletal|dagon'?hai|celestial|sea singer|hailfire|sceptre|obliteration|inquisitor|praesul|imperium core|cywir|kodai|\bmage\b|\bmagic\b|elemental|avernic|wicked/i, 2],

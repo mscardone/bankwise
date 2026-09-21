@@ -120,7 +120,7 @@
     var urls = [["wiki price + alch tables", bulkUrl()], ["price dump", PRICE_URL], ["price, one item", PRICE_ONE + encodeURIComponent("Magic logs|Santa hat")],
       ["quest list (first 5)", WIKI_API + "?action=query&format=json&origin=*&list=categorymembers&cmtitle=Category:Quests&cmnamespace=0&cmlimit=5"],
       ["gear tier, from the text of Rune platebody", WIKI_API + "?action=query&format=json&origin=*&redirects=1&prop=revisions&rvprop=content&rvslots=main&titles=Rune%20platebody"],
-      ["wiki categories + opening sentences", WIKI_API + "?action=query&format=json&origin=*&redirects=1&prop=categories%7Cextracts&cllimit=max&clshow=!hidden&exintro=1&explaintext=1&exsentences=6&exlimit=max&titles=" + encodeURIComponent("Magic logs|Santa hat|Commorb")]];
+      ["wiki categories + opening sentences", WIKI_API + "?action=query&format=json&origin=*&redirects=1&prop=categories%7Cextracts&cllimit=max&clshow=!hidden&exintro=1&explaintext=1&exlimit=max&titles=" + encodeURIComponent("Magic logs|Santa hat|Commorb")]];
     return Promise.all(urls.map(function (u) {
       return fetch(u[1]).then(function (r) { return r.text().then(function (t) {
         if (u[0] === "wiki price + alch tables") {
@@ -165,7 +165,7 @@
   function saveFacts() { store.set("bankwise.facts.v1", JSON.stringify(facts)); }
   function factsFor(name) {
     var k = key(name), f = facts[k];
-    if (f && Date.now() - f.at < 30 * DAY && f.blurb !== undefined && f.tele !== undefined) return f;      /* fields missing = cached by an older version: ask again once */
+    if (f && Date.now() - f.at < 30 * DAY && f.blurb !== undefined && f.tele !== undefined && f.bv === 2) return f;      /* fields missing = cached by an older version: ask again once */
     if (!pending[k] && name) { pending[k] = 1; queue.push(name); if (!timer) timer = setTimeout(flush, 400); }
     return f || null;
   }
@@ -174,9 +174,9 @@
     var batch = queue.splice(0, 20);      /* 20 = as many opening paragraphs as the wiki hands out per request */
     if (!batch.length) return;
     status.facts = "asking the wiki about " + batch.length + " item" + (batch.length === 1 ? "" : "s");
-    var url = WIKI_API + "?action=query&format=json&origin=*&redirects=1&prop=categories%7Cextracts&cllimit=max&clshow=!hidden&exintro=1&explaintext=1&exsentences=6&exlimit=max&titles=" + encodeURIComponent(batch.join("|"));
+    var url = WIKI_API + "?action=query&format=json&origin=*&redirects=1&prop=categories%7Cextracts&cllimit=max&clshow=!hidden&exintro=1&explaintext=1&exlimit=max&titles=" + encodeURIComponent(batch.join("|"));
     fetch(url).then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); }).then(function (j) { return collect(j, url, batch, 0); }).then(function () {
-      batch.forEach(function (n) { var k = key(n); delete pending[k]; if (!facts[k]) facts[k] = { at: Date.now(), cats: [], missing: true }; if (facts[k].blurb === undefined) facts[k].blurb = ""; if (facts[k].tele === undefined) facts[k].tele = ""; });
+      batch.forEach(function (n) { var k = key(n); delete pending[k]; if (!facts[k]) facts[k] = { at: Date.now(), cats: [], missing: true }; if (facts[k].blurb === undefined) facts[k].blurb = ""; facts[k].bv = 2; if (facts[k].tele === undefined) facts[k].tele = ""; });
       saveFacts(); status.facts = Object.keys(facts).length + " items known"; changed();
       if (queue.length) timer = setTimeout(flush, 1200);
     }).catch(function (e) {
@@ -192,7 +192,7 @@
       while (back[from] && guard++ < 4) from = back[from];
       var old = facts[key(from)], k = key(from), f = old && old.fresh ? old : (facts[k] = { at: Date.now(), cats: [], fresh: 1, quests: old && old.quests, gear: old && old.gear });
       f.title = pg.title; f.missing = pg.missing !== undefined;
-      if (typeof pg.extract === "string" && pg.extract) { f.blurb = tidyBlurb(pg.extract); f.tele = teleSentence(pg.extract, f.blurb); }
+      if (typeof pg.extract === "string" && pg.extract) { f.blurb = tidyBlurb(pg.extract); f.bv = 2; f.tele = teleSentence(pg.extract, f.blurb); }
       (pg.categories || []).forEach(function (c) { var t = String(c.title).replace(/^Category:/, ""); if (f.cats.indexOf(t) < 0) f.cats.push(t); });
     }
     if (j && j["continue"] && depth < 4) {
@@ -303,17 +303,19 @@
     }).catch(function (e) { batch.forEach(function (n) { delete gearPending[key(n)]; }); status.lastError = "gear tiers: " + e.message; });
   }
 
-  /* the opening of the wiki page, cut to a couple of sentences that fit the card */
+  /* the opening of the wiki page */
   function tidyBlurb(t) {
+    /* everything the page says before its table of contents; the card shows five lines of it and ends in an ellipsis.
+       Kept to a sane length for storage, cut at a sentence end where there is one. */
     t = String(t || "").replace(/\s+/g, " ").replace(/\s*\([^)]{0,40}\bpronounced\b[^)]*\)/i, "").trim();
-    if (t.length <= 260) return t;
-    var cut = t.slice(0, 260), stop = Math.max(cut.lastIndexOf(". "), cut.lastIndexOf("! "));
-    return stop > 80 ? cut.slice(0, stop + 1) : cut.replace(/\s+\S*$/, "") + "...";
+    if (t.length <= 700) return t;
+    var cut = t.slice(0, 700), stop = Math.max(cut.lastIndexOf(". "), cut.lastIndexOf("! "));
+    return stop > 350 ? cut.slice(0, stop + 1) : cut.replace(/\s+\S*$/, "") + "...";
   }
   /* the sentence of the opening paragraph that says where a thing teleports to, when the blurb does not already */
   function teleSentence(extract, blurb) {
     var parts = String(extract || "").replace(/\s+/g, " ").match(/[^.!?]+[.!?]+(?=\s|$)/g) || [], i;      /* no lookbehind: Alt1's browser may be too old for it */
-    for (i = 0; i < parts.length; i++) if (/teleport/i.test(parts[i]) && String(blurb || "").indexOf(parts[i].trim().slice(0, 40)) < 0) return parts[i].trim().slice(0, 220);
+    for (i = 0; i < parts.length; i++) if (/teleport/i.test(parts[i]) && String(blurb || "").slice(0, 320).indexOf(parts[i].trim().slice(0, 40)) < 0)      /* not if the card's five lines already show it */ return parts[i].trim().slice(0, 220);
     return "";
   }
   function has(f, re) { return !!(f && f.cats && f.cats.some(function (c) { return re.test(c); })); }

@@ -2,7 +2,7 @@
    draws value/verdict markers over the game and explains each verdict. */
 (function () {
   "use strict";
-  var VERSION = "0.8.5";
+  var VERSION = "0.8.6";
   var READ_MS = 700, HOVER_MS = 250, OVERLAY_MS = 2500, OVERLAY_GROUP = "bankwise";
   function $(id) { return document.getElementById(id); }
   var store = {
