@@ -91,10 +91,6 @@ footer{margin-top:8px}
 .gold{color:var(--stackgold,#f8d56b)}
 #halch{color:var(--dim);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #halch b{color:var(--text)}
-#banktotal{font-size:12px;margin-bottom:4px;color:var(--dim)}
-#banktotal b{font-size:14px}
-#banktotal a{color:var(--dim);font-size:10px;float:right}
-#banktotalnote{font-size:10px}
 .tierrow{display:flex;align-items:center;gap:5px;margin:3px 0 3px 18px;font-size:11px}
 .tierrow input[type=number]{width:86px}
 input.hex{width:62px;font-family:Consolas,monospace}

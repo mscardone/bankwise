@@ -95,21 +95,63 @@
   function save(lib) { return idb().then(function (db) { return new Promise(function (res, rej) { var tx = db.transaction(STORE, "readwrite"); tx.objectStore(STORE).put(lib, KEY); tx.oncomplete = function () { res(true); }; tx.onerror = function () { rej(tx.error); }; }); }); }
   function loadLocal() { return idb().then(function (db) { return new Promise(function (res) { var rq = db.transaction(STORE).objectStore(STORE).get(KEY); rq.onsuccess = function () { res(rq.result || null); }; rq.onerror = function () { res(null); }; }); }).catch(function () { return null; }); }
   function clearLocal() { return idb().then(function (db) { return new Promise(function (res) { var tx = db.transaction(STORE, "readwrite"); tx.objectStore(STORE)["delete"](KEY); tx.oncomplete = function () { res(true); }; tx.onerror = function () { res(false); }; }); }).catch(function () { return false; }); }
+  /* The patches travel as one PNG sheet (a third of the size of the raw bytes): icon i is the 18x12 tile
+     at column i % cols, row floor(i / cols).  A PNG without transparency comes back off a canvas byte for byte. */
+  var SHEET_COLS = 128;
+  function sheetCanvas(lib) {
+    var n = lib.names.length, cols = SHEET_COLS, cw = WikiLib.CW, ch = WikiLib.CH, cv = document.createElement("canvas");
+    cv.width = cols * cw; cv.height = Math.ceil(n / cols) * ch;
+    var cx = cv.getContext("2d"), id = cx.createImageData(cv.width, cv.height), d = id.data, i, x, y;
+    for (i = 3; i < d.length; i += 4) d[i] = 255;
+    for (i = 0; i < n; i++) {
+      var ox = (i % cols) * cw, oy = Math.floor(i / cols) * ch;
+      for (y = 0; y < ch; y++) for (x = 0; x < cw; x++) { var s = i * WikiLib.BYTES + (y * cw + x) * 3, q = ((oy + y) * cv.width + ox + x) * 4; d[q] = lib.patches[s]; d[q + 1] = lib.patches[s + 1]; d[q + 2] = lib.patches[s + 2]; }
+    }
+    cx.putImageData(id, 0, 0);
+    return cv;
+  }
+  function loadSheet(url, n, cols) {
+    return new Promise(function (resolve) {
+      var img = new Image();
+      img.onerror = function () { resolve(null); };
+      img.onload = function () {
+        try {
+          var cw = WikiLib.CW, ch = WikiLib.CH;
+          if (img.width !== cols * cw || img.height < Math.ceil(n / cols) * ch) return resolve(null);
+          var cv = document.createElement("canvas"); cv.width = img.width; cv.height = img.height;
+          var cx = cv.getContext("2d"); cx.drawImage(img, 0, 0);
+          var d = cx.getImageData(0, 0, cv.width, cv.height).data, out = new Uint8Array(n * WikiLib.BYTES), i, x, y;
+          for (i = 0; i < n; i++) {
+            var ox = (i % cols) * cw, oy = Math.floor(i / cols) * ch;
+            for (y = 0; y < ch; y++) for (x = 0; x < cw; x++) { var q = ((oy + y) * cv.width + ox + x) * 4, s = i * WikiLib.BYTES + (y * cw + x) * 3; out[s] = d[q]; out[s + 1] = d[q + 1]; out[s + 2] = d[q + 2]; }
+          }
+          resolve(out);
+        } catch (e) { resolve(null); }
+      };
+      img.src = url;
+    });
+  }
   function loadShipped(version) {
     return fetch("./data/wiki-icons.json?v=" + version).then(function (r) { return r.ok ? r.json() : null; }).then(function (meta) {
       if (!meta || meta.v !== 1 || meta.bytes !== WikiLib.BYTES || !meta.names || !meta.names.length) return null;
+      return loadSheet("./data/wiki-icons.png?v=" + version + "-" + meta.at, meta.names.length, meta.cols || SHEET_COLS).then(function (patches) {
+        if (patches) return { names: meta.names, files: meta.files, patches: patches, category: meta.category, at: meta.at };
+        return loadBin(version, meta);      /* an older data folder: the raw bytes */
+      });
+    }).catch(function () { return null; });
+  }
+  function loadBin(version, meta) {
       return fetch("./data/wiki-icons.bin?v=" + version + "-" + meta.at).then(function (r) { return r.ok ? r.arrayBuffer() : null; }).then(function (ab) {
         if (!ab || ab.byteLength !== meta.names.length * WikiLib.BYTES) return null;
         return { names: meta.names, files: meta.files, patches: new Uint8Array(ab), category: meta.category, at: meta.at };
-      });
-    }).catch(function () { return null; });
+      }).catch(function () { return null; });
   }
   /* one file per click: a second download started by script is silently dropped by Alt1's browser */
   function download(lib, which) {
     function give(blob, name) { var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove(); }
-    if (which === "bin") give(new Blob([lib.patches], { type: "application/octet-stream" }), "wiki-icons.bin");
-    else give(new Blob([JSON.stringify({ v: 1, bytes: WikiLib.BYTES, category: lib.category, at: lib.at, names: lib.names, files: lib.files })], { type: "application/json" }), "wiki-icons.json");
+    if (which === "png") sheetCanvas(lib).toBlob(function (blob) { give(blob, "wiki-icons.png"); }, "image/png");
+    else give(new Blob([JSON.stringify({ v: 1, bytes: WikiLib.BYTES, cols: SHEET_COLS, category: lib.category, at: lib.at, names: lib.names, files: lib.files })], { type: "application/json" }), "wiki-icons.json");
   }
 
-  root.WikiBuild = { build: build, save: save, loadLocal: loadLocal, loadShipped: loadShipped, clearLocal: clearLocal, download: download, fileUrl: fileUrl };
+  root.WikiBuild = { build: build, save: save, loadLocal: loadLocal, loadShipped: loadShipped, clearLocal: clearLocal, download: download, _sheetCanvas: sheetCanvas, _loadSheet: loadSheet, fileUrl: fileUrl };
 })(this);

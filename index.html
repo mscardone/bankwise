@@ -5,7 +5,7 @@
 <title>Bankwise</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="icon" href="./icon.png">
-<link rel="stylesheet" href="./style.css?v=0.7.0">
+<link rel="stylesheet" href="./style.css?v=0.8.1">
 </head>
 <body>
 <header>
@@ -18,7 +18,6 @@
 <div id="status">starting&hellip;</div>
 
 <section id="main">
-  <div id="banktotal" style="display:none" title="Adds up every item seen since the last reset, at the stack size it had when last seen. Scroll through all your tabs once to count the whole bank.">Bank total <b id="banktotalvalue" class="gold"></b> <span id="banktotalnote"></span> <a href="#" id="bankreset">reset</a></div>
   <div id="counts"></div>
 
   <div id="hover" class="card">
@@ -111,7 +110,7 @@
   <div class="btns">
     <button id="wikibuild">Build from the wiki</button>
     <button id="wikidownload" style="display:none" title="One of the two files for the app's data folder, so every user gets the guesses without building">Download wiki-icons.json</button>
-    <button id="wikidownloadbin" style="display:none" title="The other file for the app's data folder (the pictures themselves, about 22 MB)">Download wiki-icons.bin</button>
+    <button id="wikidownloadbin" style="display:none" title="The other file for the app's data folder: every icon on one picture sheet">Download wiki-icons.png</button>
     <button id="wikiclear" style="display:none">Remove</button>
   </div>
 
@@ -133,22 +132,22 @@
   <pre id="dbgout" style="display:none"></pre>
 </footer>
 
-<script src="./vendor/a1lib.js?v=0.7.0"></script>
-<script src="./vendor/ocr.js?v=0.7.0"></script>
-<script src="./vendor/font-chat-12pt.js?v=0.7.0"></script>
-<script src="./vendor/font-chat-14pt.js?v=0.7.0"></script>
-<script src="./vendor/font-chat-16pt.js?v=0.7.0"></script>
-<script src="./vendor/font-chat-18pt.js?v=0.7.0"></script>
-<script src="./src/reader.js?v=0.7.0"></script>
-<script src="./src/tooltip.js?v=0.7.0"></script>
-<script src="./src/stack.js?v=0.7.0"></script>
-<script src="./src/library.js?v=0.7.0"></script>
-<script src="./src/wikilib.js?v=0.7.0"></script>
-<script src="./src/wikibuild.js?v=0.7.0"></script>
-<script src="./src/data.js?v=0.7.0"></script>
-<script src="./src/kinds.js?v=0.7.0"></script>
-<script src="./src/verdict.js?v=0.7.0"></script>
-<script src="./src/runemetrics.js?v=0.7.0"></script>
-<script src="./src/app.js?v=0.7.0"></script>
+<script src="./vendor/a1lib.js?v=0.8.1"></script>
+<script src="./vendor/ocr.js?v=0.8.1"></script>
+<script src="./vendor/font-chat-12pt.js?v=0.8.1"></script>
+<script src="./vendor/font-chat-14pt.js?v=0.8.1"></script>
+<script src="./vendor/font-chat-16pt.js?v=0.8.1"></script>
+<script src="./vendor/font-chat-18pt.js?v=0.8.1"></script>
+<script src="./src/reader.js?v=0.8.1"></script>
+<script src="./src/tooltip.js?v=0.8.1"></script>
+<script src="./src/stack.js?v=0.8.1"></script>
+<script src="./src/library.js?v=0.8.1"></script>
+<script src="./src/wikilib.js?v=0.8.1"></script>
+<script src="./src/wikibuild.js?v=0.8.1"></script>
+<script src="./src/data.js?v=0.8.1"></script>
+<script src="./src/kinds.js?v=0.8.1"></script>
+<script src="./src/verdict.js?v=0.8.1"></script>
+<script src="./src/runemetrics.js?v=0.8.1"></script>
+<script src="./src/app.js?v=0.8.1"></script>
 </body>
 </html>

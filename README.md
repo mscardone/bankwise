@@ -8,7 +8,7 @@ An [Alt1 Toolkit](https://runeapps.org/alt1) app for RuneScape 3 that reads your
 
 It only reads the screen and draws markers. It never clicks, types or moves anything in the game.
 
-> **Status: v0.7.0.** Bank reading, item matching and tooltip reading are tested on real Alt1
+> **Status: v0.8.1.** Bank reading, item matching and tooltip reading are tested on real Alt1
 > captures (items match pixel-for-pixel between captures). The wiki lookups and the RuneMetrics
 > lookup have not worked live yet. See "Not proven yet" below.
 
@@ -24,7 +24,7 @@ The app needs the **pixel**, **overlay** and **game state** permissions (game st
 
 ## Using it
 
-0. Nothing to set up: the app ships with a starter library of learned items (`data/seed-library.json`) and the RuneScape Wiki's icon for nearly every item (`data/wiki-icons.json` + `.bin`, fetched once and then kept on your computer). An item recognised from a wiki icon is treated like any known item; hovering it in the bank settles or corrects it.
+0. Nothing to set up: the app ships with a starter library of learned items (`data/seed-library.json`) and the RuneScape Wiki's icon for nearly every item (`data/wiki-icons.json` + `.png`, fetched once and then kept on your computer). An item recognised from a wiki icon is treated like any known item; hovering it in the bank settles or corrects it.
 1. Open your bank. Items the app does not know and cannot recognise get a red box.
 2. Sweep your mouse across the items. When the game shows an item's name, Bankwise reads it and remembers what that item looks like - permanently. A few minutes covers a whole bank, and each item only ever needs doing once.
 3. Known items lose their box and get:
@@ -32,14 +32,13 @@ The app needs the **pixel**, **overlay** and **game state** permissions (game st
    - the value of the whole stack in gold under the item (`950`, `12.3K`, `1.23M`, `2.5B`; the app reads the stack number);
    - a letter in the top right corner when there is advice: **J** junk (sell or alch), **D** reclaimable from Diango (safe to destroy), **Q** quest item for a finished quest, **K** quest item to keep.
 4. Hover an item in the bank, or a row in the app, for the detail card: price, stack value, high alch value, the tab it belongs in and the reason for the verdict. The card follows the mouse whether or not teach is on.
-   **Bank total** at the top adds up every item the app has seen since the last *reset*, at the stack size it last had - scroll through your tabs once to count the whole bank.
 5. The **teach** tick-box in the header switches learning from tooltips on and off. *Type the name yourself* on the card fixes a misread.
 6. A small amber corner means the item shares its exact icon with other items (a ring and its enchanted version, a necklace at different charges): the app shows whichever one you hovered last and lists the rest on the card.
 7. An amber box means "looks like X, not sure" - hover it once to settle it. If a name was read wrongly, use *wrong name?* on the card.
 
 ### Settings
 
-- **Bank layout** - four templates (five-tab essentials, PvM-focused, skiller, granular 14-tab). The tab numbers on screen follow the template.
+- **Bank layout** - five templates (five-tab essentials, PvM-focused, skiller, granular 14-tab, and the author's own eight-tab Geech Layout). The tab numbers on screen follow the template.
 - **Advice** - out of the box only wiki data is used, so advice is the same for everyone. Three options, all off by default, make it personal:
   - *my quest log* - a quest item whose quest you have finished can go;
   - *my skill levels* with a goal level - logs are a keeper at 80 Firemaking and sellable at 99;
@@ -55,7 +54,7 @@ The app needs the **pixel**, **overlay** and **game state** permissions (game st
 - `src/data.js` fetches prices, high-alch values and shop values once a day from the wiki's own tables (`Module:GEPrices/data.json`, `GEHighAlchs`, `GEValues`, read through the wiki API), falling back to the Grand Exchange dump and then to item-by-item lookups, and each item's wiki categories the first time it is seen. `src/kinds.js` turns name + categories into one of 28 kinds and maps kinds to tabs. `src/verdict.js` is the keep/sell/destroy rule list. `src/runemetrics.js` is the optional profile lookup.
 - `src/tooltip.js` finds the game's tooltip (since the 2026 interface it is a very dark brown box, not the pure black one Alt1's stock finder looks for), climbs to its top panel and reads the item name, which the game draws in its own colour, with Alt1's chat fonts (12-18pt tried; 14pt is the one at default scale).
 - `src/reader.js` also keeps the slot lattice steady between reads: a tooltip hides whole rows and nudges the fit by a pixel, so rows and columns are carried over from the previous read while most of them still line up.
-- `src/wikilib.js` guesses unknown items from the RuneScape Wiki's icons. Those are trimmed and not pixel-identical to the game's, so both sides are anchored on their own content (bottom edge, middle of the bottom 12 rows) and compared by average colour difference; rows under the stack number are ignored. `src/wikibuild.js` builds that icon library in the player's browser from a wiki category, keeps it in IndexedDB, and can export `data/wiki-icons.json` + `.bin` to ship with the app. A tooltip name is refused when the wiki is sure the slot is a different item.
+- `src/wikilib.js` guesses unknown items from the RuneScape Wiki's icons. Those are trimmed and not pixel-identical to the game's, so both sides are anchored on their own content (bottom edge, middle of the bottom 12 rows) and compared by average colour difference; rows under the stack number are ignored. `src/wikibuild.js` builds that icon library in the player's browser from a wiki category, keeps it in IndexedDB, and can export `data/wiki-icons.json` + `wiki-icons.png` to ship with the app (every icon as an 18x12 tile on one PNG sheet, a third of the size of the raw bytes and byte-exact off a canvas; `tools/pack-icons.js` makes the same sheet from an older `.bin`). A tooltip name is refused when the wiki is sure the slot is a different item.
 - `src/stack.js` reads the stack size: an 8px pixel font at a fixed place in the slot, matched column by column; yellow = the number, white = thousands, green = millions (so white/green stack values are approximate).
 - `vendor/` holds the official Alt1 libraries (`a1lib`, `ocr`, four chat fonts) from the `alt1` npm package, unmodified. No build step.
 
@@ -67,6 +66,11 @@ The app needs the **pixel**, **overlay** and **game state** permissions (game st
 4. **RuneMetrics from inside Alt1** - may be blocked cross-origin; JSONP and paste are the fallbacks.
 
 Not built yet: stack sizes at interface scales other than 100%, placeholders, and a whole-bank report.
+
+## Updating the shipped data
+
+- **Starter library**: Settings -> Item library -> Export, save the file as `data/seed-library.json`.
+- **Wiki icons**: after a rebuild, Settings -> Wiki icons -> *Download wiki-icons.json* and *Download wiki-icons.png*, both into `data/` (they must come from the same build).
 
 ## Development
 

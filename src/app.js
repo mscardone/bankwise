@@ -2,7 +2,7 @@
    draws value/verdict markers over the game and explains each verdict. */
 (function () {
   "use strict";
-  var VERSION = "0.7.0";
+  var VERSION = "0.8.1";
   var READ_MS = 700, HOVER_MS = 250, OVERLAY_MS = 5000, OVERLAY_GROUP = "bankwise";
   function $(id) { return document.getElementById(id); }
   var store = {
@@ -112,45 +112,14 @@
   function info(name) {
     var it = Data.describe(name);
     it.kind = Kinds.kindOf(name, it.cats);
-    it.tab = Kinds.tabFor(it.kind, settings.template);
+    it.tab = Kinds.tabFor(it.kind, settings.template, name, it);
     it.verdict = Verdict.judge(it, settings, profile, Kinds);
     if (name === "Coins") { it.price = 1; it.verdict = { id: "keep", tag: "", reason: "Money." }; }
     it.tier = tierOf(it.price);
     return it;
   }
 
-  /* ---------- whole-bank total ---------- */
-  /* The app only ever sees the part of the bank that is on screen, so the total is kept as a
-     running record: every icon seen since the last reset, with the name and stack size it had
-     the last time it was seen.  Keyed by the icon, so a corrected name replaces the wrong one. */
-  var bank = loadJSON("bankwise.bank.v1", {}), bankDirty = false, bankSavedAt = 0;
-  function noteBank(r) {
-    var now = {}, h;
-    r.slots.forEach(function (s) {
-      if (s.covered || !named(s) || !s.hash) return;
-      var q = s.stack && s.stack.qty ? s.stack.qty : null, e = now[s.hash];
-      if (e) { e.q = e.q !== null && q !== null ? e.q + q : null; } else now[s.hash] = { n: s.id.name, q: q };
-    });
-    for (h in now) { var old = bank[h]; if (!old || old.n !== now[h].n || old.q !== now[h].q) { bank[h] = now[h]; bankDirty = true; } }
-    if (bankDirty && Date.now() - bankSavedAt > 5000) { bankDirty = false; bankSavedAt = Date.now(); store.set("bankwise.bank.v1", JSON.stringify(bank)); }
-  }
-  function bankTotal() {
-    var t = 0, n = 0, unpriced = 0, h;
-    for (h in bank) {
-      var e = bank[h], p = e.n === "Coins" ? { price: 1 } : Data.price(e.n);
-      n++;
-      if (p && p.price !== null) t += p.price * (e.q || 1); else unpriced++;
-    }
-    return { total: t, items: n, unpriced: unpriced };
-  }
-  function renderBankTotal() {
-    var b = bankTotal(), el = $("banktotal");
-    if (!b.items) { el.style.display = "none"; return; }
-    el.style.display = "";
-    $("banktotalvalue").textContent = Verdict.short(b.total);
-    $("banktotalvalue").title = String(Math.round(b.total)).replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " gp";
-    $("banktotalnote").textContent = b.items + " different items seen" + (b.unpriced ? ", " + b.unpriced + " with no price" : "");
-  }
+  try { localStorage.removeItem("bankwise.bank.v1"); } catch (e) { /* 0.7.0 kept a running bank total here; the feature is gone */ }
 
   /* ---------- overlay ---------- */
   var COL = null;
@@ -231,7 +200,6 @@
     identifyAll(r, mousePos());
     guessUnknown(r);
     readStacks(r);
-    noteBank(r);
     view = r;
     render(); drawOverlay();
   }
@@ -301,7 +269,7 @@
   function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
   function slotImg(s) { if (!s._img && view && view.buf) { try { s._img = Reader.slotImage(view.buf, s, view.off); } catch (e) { s._img = ""; } } return s._img || ""; }
   function render() {
-    if (!view) { renderBankTotal(); $("counts").innerHTML = ""; $("list").innerHTML = '<div class="empty">Nothing to show until the bank is open.</div>'; $("list")._html = ""; renderCard(); return; }
+    if (!view) { $("counts").innerHTML = ""; $("list").innerHTML = '<div class="empty">Nothing to show until the bank is open.</div>'; $("list")._html = ""; renderCard(); return; }
     var known = 0, unsure = 0, unknown = 0, guessed = 0;
     view.slots.forEach(function (s) { if (s.id.state === "guess") guessed++; else if (named(s)) known++; else if (s.id.state === "unsure") unsure++; else if (s.id.state !== "covered") unknown++; });
     /* an item recognised from the wiki's icon is treated as known: hovering it still corrects it, but nobody is asked to */
@@ -311,7 +279,6 @@
     var cg = confidentGuesses().length;
     $("acceptguesses").style.display = cg ? "" : "none"; $("acceptguesses").textContent = "Accept " + cg + " sure guess" + (cg === 1 ? "" : "es");
     if (total) $("counts").innerHTML += "<span>worth about <b>" + Verdict.short(total) + "</b> on screen</span>";
-    renderBankTotal();
   }
   function renderList() {
     var rows = [], seen = {};
@@ -373,7 +340,7 @@
   function renderTemplate() {
     var t = Kinds.template(settings.template);
     $("templateblurb").textContent = t.blurb;
-    $("templatetabs").innerHTML = t.tabs.map(function (tab) { return "<li><b>" + esc(tab[0]) + "</b> &mdash; " + tab[1].map(function (kd) { return esc(Kinds.KIND_LABEL[kd]); }).join(", ") + "</li>"; }).join("");
+    $("templatetabs").innerHTML = t.tabs.map(function (tab) { return "<li><b>" + esc(tab[0]) + "</b> &mdash; " + (tab[2] ? esc(tab[2]) : tab[1].map(function (kd) { return esc(Kinds.KIND_LABEL[kd]); }).join(", ")) + "</li>"; }).join("");
   }
   function renderLibStatus() {
     var bytes = (store.get("bankwise.library.v1") || "").length;
@@ -428,7 +395,6 @@
   });
   Array.prototype.forEach.call($("settings").querySelectorAll("input[data-ov]"), function (el) { el.addEventListener("change", function () { settings.ov[el.getAttribute("data-ov")] = el.checked; overlayChanged(); }); });
   $("ovreset").addEventListener("click", function () { settings.ov = ovDefaults(); renderOverlaySettings(); overlayChanged(); });
-  $("bankreset").addEventListener("click", function (e) { e.preventDefault(); bank = {}; store.set("bankwise.bank.v1", "{}"); if (view) noteBank(view); renderBankTotal(); });
 
   function changed() { saveSettings(); overlaySig = ""; if (view) { render(); drawOverlay(); } renderProfile(); }
 
@@ -454,7 +420,7 @@
     }).catch(function (e) { building = null; wikiInfo = "build failed: " + (e && e.message || e); renderWikiStatus(); });
   });
   $("wikidownload").addEventListener("click", function () { if (wikiRaw) WikiBuild.download(wikiRaw, "json"); });
-  $("wikidownloadbin").addEventListener("click", function () { if (wikiRaw) WikiBuild.download(wikiRaw, "bin"); });
+  $("wikidownloadbin").addEventListener("click", function () { if (wikiRaw) WikiBuild.download(wikiRaw, "png"); });
   $("wikiclear").addEventListener("click", function () { WikiBuild.clearLocal().then(function () { setWiki(null, ""); }); });
 
   $("opensettings").addEventListener("click", function () { var open = $("settings").style.display === "none"; $("settings").style.display = open ? "" : "none"; $("main").style.display = open ? "none" : ""; $("opensettings").className = open ? "on" : ""; renderLibStatus(); });
@@ -679,5 +645,5 @@
   render(); tick();
   setInterval(tick, READ_MS);
   setInterval(hoverTick, HOVER_MS);
-  window.Bankwise = { _redraw: function () { overlaySig = ""; drawOverlay(); }, _bank: function () { return bank; }, _bankTotal: bankTotal, _wiki: function () { return wiki; }, _setWiki: setWiki, _view: function () { return view; }, _lib: function () { return lib; }, _teach: teach, _tick: tick, _settings: settings, cleanName: cleanName };
+  window.Bankwise = { _redraw: function () { overlaySig = ""; drawOverlay(); }, _wiki: function () { return wiki; }, _setWiki: setWiki, _view: function () { return view; }, _lib: function () { return lib; }, _teach: teach, _tick: tick, _settings: settings, cleanName: cleanName };
 })();

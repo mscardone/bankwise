@@ -164,5 +164,18 @@ console.log("real captures");
   ok("wiki price tables: price, high alch, and alch worked out from value when the alch table has no entry", p && p["item 1"][0] === 101 && p["item 1"][1] === 77 && p["item 2"][1] === 60 && !p["%last_update%"], JSON.stringify(p && p["item 1"]));
   ok("a missing price table is reported, not half-used", D._parseBulk({ query: { pages: { 2: pages[2] } } }) === null);
 })();
+(function () {
+  var K = require("../src/kinds.js"), last = K.TEMPLATES[K.TEMPLATES.length - 1];
+  function tab(n, cats) { return K.tabFor(K.kindOf(n, cats || []), "geech", n).number; }
+  ok("Geech Layout ships last, with 8 tabs", last.id === "geech" && last.name === "Geech Layout" && last.tabs.length === 8);
+  var want = { "Abyssal whip": 2, "Bandos tassets": 2, "Shark": 2, "Deathdealer robe top": 2, "Dragon bones": 2, "Air rune": 3, "Polypore staff": 3, "Garb of subjugation": 3, "Varrock teleport": 3, "Prayer potion (4)": 3, "Ring of slaying (8)": 3,
+    "Coal": 4, "Magic logs": 4, "Ranarr seed": 4, "Golden mining top": 4, "Watering can (8)": 4, "Steel bar": 5, "Oak plank": 5, "Red dragonhide": 5, "Raw shark": 5, "Blacksmith's boots": 5, "Clue scroll (hard)": 6, "Crystal key": 6, "Slayer Wildcard": 6, "Portable range": 6, "Party hat fragment": 8, "Spade": 4, "Some unknown thing": 1 };
+  var wrong = Object.keys(want).filter(function (n) { return tab(n) !== want[n]; }).map(function (n) { return n + " -> " + tab(n) + ", wanted " + want[n]; });
+  ok("Geech Layout puts " + Object.keys(want).length + " sample items in the right tabs", !wrong.length, wrong.join("; "));
+  ok("a wiki quest item goes to Quest Items even when its name says weapon; a quest potion stays a potion", tab("Silverlight", ["Quest items"]) === 7 && tab("Super restore (4)", ["Quest items"]) === 3);
+  ok("Geech Layout: jewellery sits with Magic, bones and ashes with Combat", tab("Ruby ring") === 3 && tab("Amulet of power") === 3 && tab("Dragon bones") === 2 && tab("Infernal ashes") === 2);
+  ok("Geech Layout: 100m+ items and boss pets are rare loot, a 99m one is not", K.tabFor("weapon", "geech", "Noxious scythe", { price: 1.5e8, cats: [] }).number === 8 && K.tabFor("weapon", "geech", "Noxious scythe", { price: 9.9e7, cats: [] }).number === 2 && K.tabFor("misc", "geech", "Vitalis", { price: null, cats: ["Boss pets"] }).number === 8 && K.tabFor("weapon", "five", "Noxious scythe", { price: 1.5e8, cats: [] }).number === 2);
+  ok("the other layouts are unchanged by the Geech name rules", K.tabFor("metal", "five", "Steel bar").number === 4 && K.tabFor("weapon", "pvm", "Polypore staff").number === 2);
+})();
 console.log(fails ? fails + " FAILED" : "all checks passed");
 process.exit(fails ? 1 : 0);

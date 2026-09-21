@@ -88,8 +88,6 @@ const { spawn } = require('child_process'); const path = require('path'), fs = r
   const card = await page.textContent('#hover');
   ok('detail card: price, tab and reason for Magic logs', /412/.test(card) && /tab 4/.test(card) && /Consumable supply/.test(card), card.replace(/\s+/g, ' '));
   ok('detail card shows the high alch value', /High alch\s*192/.test(card), card.replace(/\s+/g, ' '));
-  const total = await page.evaluate(() => ({ shown: document.getElementById('banktotal').style.display !== 'none', text: document.getElementById('banktotal').textContent.replace(/\s+/g, ' '), t: Bankwise._bankTotal() }));
-  ok('bank total is shown: "' + total.text.trim() + '"', total.shown && total.t.items === 3 && total.t.total >= 412 && /Bank total/.test(total.text), JSON.stringify(total));
   // overlay: gold stack value under the item, colour bar by the price of ONE item, all of it adjustable
   const ovNow = async () => { await page.evaluate(() => { window.__ov.length = 0; Bankwise._redraw(); }); await page.waitForTimeout(300); return page.evaluate(() => { const s = Bankwise._view().slots.filter(q => q.id.name === 'Magic logs' && q.id.state === 'known')[0], mine = o => o[2] >= s.x && o[2] < s.x + s.w && o[3] >= s.y - 2 && o[3] <= s.y + s.h + 2; return { slot: { x: s.x, y: s.y, stack: s.stack }, rects: window.__ov.filter(o => o[0] === 'rect' && o[2] >= s.x && o[2] < s.x + s.w && o[3] >= s.y && o[3] < s.y + s.h).map(o => [o[1], o[5]]), texts: window.__ov.filter(o => o[0] === 'text' && o[4] >= s.x && o[4] < s.x + s.w && o[5] >= s.y && o[5] <= s.y + s.h + 2).map(o => [o[1], o[2]]), all: window.__ov.filter(o => o[0] === 'text').map(o => o[1]), gold: A1lib.mixColor(248, 213, 107), red: A1lib.mixColor(255, 0, 0) }; }); };
   let o1 = await ovNow();
@@ -206,6 +204,15 @@ const { spawn } = require('child_process'); const path = require('path'), fs = r
   await p2.addInitScript(() => { delete window.alt1; });
   const c3 = await browser.newContext({ viewport: { width: 340, height: 520 } }); const p3 = await c3.newPage(); p3.on('pageerror', e => e2.push(e.message));
   await p3.goto('http://127.0.0.1:8378/index.html'); await p3.waitForTimeout(500);
+  // the shipped wiki icon sheet must unpack to exactly the bytes that were packed
+  await p3.waitForFunction(() => Bankwise._wiki().n > 0, null, { timeout: 30000 }).catch(() => { });
+  const fnv = b => { let h = 2166136261; for (let i = 0; i < b.length; i++) { h ^= b[i]; h = Math.imul(h, 16777619) >>> 0; } return h; };
+  const shipped = await p3.evaluate(() => { const w = Bankwise._wiki(); let h = 2166136261; for (let i = 0; i < w.patches.length; i++) { h ^= w.patches[i]; h = Math.imul(h, 16777619) >>> 0; } return { n: w.n, bytes: w.patches.length, h }; });
+  const sheet = PNG.sync.read(fs.readFileSync(path.join(__dirname, '../data/wiki-icons.png'))), metaN = JSON.parse(fs.readFileSync(path.join(__dirname, '../data/wiki-icons.json'), 'utf8')).names.length, want = new Uint8Array(metaN * 648);
+  for (let i = 0; i < metaN; i++) { const ox = (i % 128) * 18, oy = Math.floor(i / 128) * 12; for (let y = 0; y < 12; y++) for (let x = 0; x < 18; x++) { const q = ((oy + y) * sheet.width + ox + x) * 4, t = i * 648 + (y * 18 + x) * 3; want[t] = sheet.data[q]; want[t + 1] = sheet.data[q + 1]; want[t + 2] = sheet.data[q + 2]; } }
+  ok('the shipped wiki icons load from the PNG sheet, byte for byte: ' + shipped.n + ' icons', shipped.n === metaN && metaN > 30000 && shipped.h === fnv(want), JSON.stringify(shipped));
+  const rt = await p3.evaluate(async () => { const w = Bankwise._wiki(), lib = { names: w.names.slice(0, 300), patches: w.patches.subarray(0, 300 * 648) }; const blob = await new Promise(r => WikiBuild._sheetCanvas(lib).toBlob(r, 'image/png')); const back = await WikiBuild._loadSheet(URL.createObjectURL(blob), 300, 128); return back && back.length === lib.patches.length && back.every((v, i) => v === lib.patches[i]); });
+  ok('the Download wiki-icons.png sheet made in the browser reads back unchanged', rt === true);
   const seedN = await p3.evaluate(() => Bankwise._lib().names().length);
   ok('the shipped starter library loads: ' + seedN + ' items known before anything is taught', seedN > 600 && !(await p3.evaluate(() => Bankwise._lib().names().some(n => /^view tab/i.test(n)))));
   ok('outside Alt1 it says so and does not crash', /inside Alt1/.test(await p3.textContent('#status')) && e2.length === 0, e2.join(' | '));
