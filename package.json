@@ -1,6 +1,6 @@
 {
   "name": "bankwise",
-  "version": "0.5.0",
+  "version": "0.5.3",
   "private": true,
   "description": "Alt1 app: reads the RS3 bank, learns items as you hover them, and shows value, the tab each item belongs in, and keep / sell / destroy advice.",
   "scripts": {

@@ -95,9 +95,32 @@ console.log("real captures");
     var o = { width: plainBuf.width, height: plainBuf.height, data: new Uint8ClampedArray(plainBuf.data) }, x, y;
     for (y = 300; y < 640; y++) for (x = 690; x < 1000; x++) { var q = (y * o.width + x) * 4; o.data[q] = 70 + (x % 7) * 9; o.data[q + 1] = 60 + (y % 5) * 11; o.data[q + 2] = 50; }
     var alone = Reader.readBuffer(o), leaning = Reader.readBuffer(o, false, 0, 0, plain.grid, null);
-    ok("a menu-sized box over the bank: " + (alone.error ? "unreadable alone" : alone.grid.rows.length + " rows alone") + ", " + (leaning.error || leaning.grid.rows.length + " rows") + " with the previous read", !leaning.error && leaning.grid.rows.length === 20);
+    var moved = leaning.grid ? leaning.grid.rows.filter(function (q) { return !plain.grid.rows.some(function (z) { return Math.abs(z.y - q.y) < 0.01; }); }).length : -1;
+    ok("a menu-sized box over the bank: " + (alone.error ? "unreadable alone" : alone.grid.rows.length + " rows alone") + ", " + (leaning.error || leaning.grid.rows.length + " rows, " + moved + " out of place") + " with the previous read", !leaning.error && moved === 0 && leaning.grid.rows.length >= 12);
     for (x = 0; x < o.data.length; x += 4) { o.data[x] = 90; o.data[x + 1] = 130; o.data[x + 2] = 70; }
     ok("bank closed: the previous lattice is NOT reused", !!Reader.readBuffer(o, false, 0, 0, plain.grid, null).error);
+  })();
+  /* a small tab: only one, two or three rows of items under the tab buttons */
+  (function () {
+    var res = [1, 2, 3].map(function (keep) {
+      var o = { width: plainBuf.width, height: plainBuf.height, data: new Uint8ClampedArray(plainBuf.data) }, x, y, cut = Math.round(plain.grid.rows[keep - 1].y + 22);
+      for (y = cut; y < 1036; y++) for (x = 677; x < 1131; x++) { var q = (y * o.width + x) * 4; o.data[q] = 51; o.data[q + 1] = 46; o.data[q + 2] = 41; }
+      var r = Reader.readBuffer(o);
+      return !r.error && r.grid.rows.length === keep && r.grid.cols.length === 10 && Math.abs(r.grid.cols[0] - plain.grid.cols[0]) < 1.5 && Math.abs(r.grid.rows[0].y - plain.grid.rows[0].y) < 1.5 ? "ok" : (r.error || JSON.stringify(r.grid.rows.map(function (z) { return z.y; })) + " cols0 " + r.grid.cols[0]);
+    });
+    ok("a tab with only 1, 2 or 3 rows: lattice still on the items (the tab buttons do not count as a row)", res.join() === "ok,ok,ok", res.join(" | "));
+  })();
+  /* other interfaces share the bank's background colour: a lattice of things without the bank's tab
+     buttons above it is not a bank (Scott: the Slayer rewards screen got boxes drawn on it) */
+  (function () {
+    var o = { width: 1400, height: 900, data: new Uint8ClampedArray(1400 * 900 * 4) }, x, y, r, c, q;
+    for (q = 0; q < o.data.length; q += 4) { o.data[q] = 90 + (q % 13) * 5; o.data[q + 1] = 120; o.data[q + 2] = 70; o.data[q + 3] = 255; }
+    for (y = 200; y < 640; y++) for (x = 300; x < 800; x++) { q = (y * 1400 + x) * 4; o.data[q] = 51; o.data[q + 1] = 46; o.data[q + 2] = 41; }
+    for (r = 0; r < 5; r++) for (c = 0; c < 9; c++) for (y = 0; y < 30; y++) for (x = 0; x < 30; x++) if ((x + y) % 3) { q = ((260 + r * 44 + y) * 1400 + 330 + c * 44 + x) * 4; o.data[q] = 150 + c * 8; o.data[q + 1] = 90 + r * 20; o.data[q + 2] = 60; }
+    var res = Reader.readBuffer(o);
+    ok("a shop-like panel (same background, 9x5 lattice of things, no tab buttons) is not a bank: " + (res.error || res.slots.length + " slots"), !!res.error);
+    var shot = Reader.readBuffer(loadPng(path.join(__dirname, "shot-slayer-rewards.png")));
+    ok("Scott's Slayer rewards screenshot is not a bank: " + (shot.error || shot.slots.length + " slots"), !!shot.error);
   })();
   ok("no tooltip -> nothing read", Tip.read(plainBuf, 705, 342) === null);
   var w0 = tip.area.whole, hover = Reader.readBuffer(hoverBuf, false, 0, 0, plain.grid, { y0: w0.y, y1: w0.y + w0.height });

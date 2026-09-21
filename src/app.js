@@ -2,7 +2,7 @@
    draws value/verdict markers over the game and explains each verdict. */
 (function () {
   "use strict";
-  var VERSION = "0.5.0";
+  var VERSION = "0.5.3";
   var READ_MS = 700, HOVER_MS = 250, OVERLAY_MS = 5000, OVERLAY_GROUP = "bankwise";
   function $(id) { return document.getElementById(id); }
   var store = {
@@ -49,7 +49,7 @@
   /* wiki guesses for the slots the library does not know; a few per read so the app never stalls */
   function guessUnknown(r) {
     if (!wiki.n) return;
-    var budget = 10;
+    var budget = 8;
     r.slots.forEach(function (s) {
       if (s.covered || sure(s) || s.id.state === "covered") return;
       var g = guessCache[s.hash];
@@ -316,12 +316,12 @@
     if (building) { cancelBuild = true; return; }
     cancelBuild = false; building = "asking the wiki for the item list..."; renderWikiStatus();
     WikiBuild.build({ category: $("wikicat").value.trim() || "Items", isCancelled: function () { return cancelBuild; }, onProgress: function (st) {
-      building = st.phase === "listing" ? "listing items: " + st.pages + " pages, " + st.files + " icons found..." : "fetching icons: " + st.done + " of " + st.files + " (" + st.kept + " usable)";
+      building = st.kept + " icons ready - fetched " + st.done + " of " + st.files + (st.listed ? "" : "+ (still listing: " + st.pages + " item pages so far)") + ". Stop keeps what is ready.";
       renderWikiStatus();
-    } }).then(function (raw) {
+    }, onCheckpoint: function (part) { WikiBuild.save(part).catch(function () { /* best effort */ }); } }).then(function (raw) {
       building = null;
       if (!raw.names.length) { wikiInfo = "nothing usable came back"; renderWikiStatus(); return; }
-      setWiki(raw, cancelBuild ? "partial build on this computer" : "built on this computer");
+      setWiki(raw, (raw.complete ? "built" : "partial build") + " on this computer" + (raw.note ? "; " + raw.note : ""));
       return WikiBuild.save(raw).catch(function (e) { wikiInfo += " - could not be saved for next time: " + (e && e.message || e); renderWikiStatus(); });
     }).catch(function (e) { building = null; wikiInfo = "build failed: " + (e && e.message || e); renderWikiStatus(); });
   });
@@ -521,7 +521,7 @@
   Data.loadPrices();
   /* the wiki icon library: this computer's own build first, else the one shipped with the app */
   WikiBuild.loadLocal().then(function (raw) {
-    if (raw && raw.names && raw.names.length && raw.patches && raw.patches.length === raw.names.length * WikiLib.BYTES) return setWiki(raw, "built on this computer");
+    if (raw && raw.names && raw.names.length && raw.patches && raw.patches.length === raw.names.length * WikiLib.BYTES) return setWiki(raw, (raw.complete === false ? "partial build" : "built") + " on this computer");
     return WikiBuild.loadShipped(VERSION).then(function (shipped) { setWiki(shipped, "shipped with the app"); });
   }).catch(function () { setWiki(null, ""); });
   /* a starter library shipped with the app, so nobody begins from nothing */

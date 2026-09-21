@@ -89,10 +89,20 @@
     if (!this.n || !view) return null;
     var c = new Float32Array(NCOARSE), i, j, k, self = this;
     coarseOf(view.patches[4], c, 0);
-    var order = new Array(this.n);
-    for (i = 0; i < this.n; i++) { var t = 0, o = i * NCOARSE; for (j = 0; j < NCOARSE; j++) { var d = c[j] - this.coarse[o + j]; t += d < 0 ? -d : d; } order[i] = [t, i]; }
-    order.sort(function (p, q) { return p[0] - q[0]; });
-    var best = {}, top = Math.min(SHORTLIST, this.n);
+    /* shortlist = the SHORTLIST nearest by the coarse colours, kept in a small sorted list as the
+       whole library streams past (sorting all of a 50,000-icon library per slot was far too slow) */
+    var order = [], worst = Infinity;
+    for (i = 0; i < this.n; i++) {
+      var t = 0, o = i * NCOARSE;
+      for (j = 0; j < NCOARSE && t < worst; j++) { var d = c[j] - this.coarse[o + j]; t += d < 0 ? -d : d; }
+      if (t >= worst) continue;
+      var lo = 0, hi = order.length;
+      while (lo < hi) { var mid = (lo + hi) >> 1; if (order[mid][0] < t) lo = mid + 1; else hi = mid; }
+      order.splice(lo, 0, [t, i]);
+      if (order.length > SHORTLIST) order.pop();
+      if (order.length === SHORTLIST) worst = order[SHORTLIST - 1][0];
+    }
+    var best = {}, top = order.length;
     for (k = 0; k < top; k++) {
       i = order[k][1]; var m = 1e9;
       for (j = 0; j < view.patches.length; j++) { var v = meanDiff(view.patches[j], 0, this.patches, i * BYTES, view.from); if (v < m) m = v; }

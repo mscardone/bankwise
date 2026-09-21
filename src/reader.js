@@ -137,6 +137,18 @@
     /* vertical extent: the longest stretch that is not solid */
     var rowRuns = runs(Array.prototype.map.call(rowN, function (v, yy) { return line[yy] ? 0 : v; }), 3);
     /* columns: profile over the non-line rows, ignoring thin runs (tab labels) */
+    /* The tab buttons above the items and the button bar below them are not item rows.  They are
+       solid furniture: a stretch of columns filled top to bottom that is WIDER than the run is
+       tall (tab bar: 40 columns in a 28px run; button bar: 177 in 25), where an item manages at
+       most about two thirds of the run's height (22 in 32).  Left in, the tab bar (pitch ~45.6)
+       out-votes a small tab's two or three rows and drags the lattice off the items. */
+    function solid(r) {
+      var best = 0, cur = 0, xx, yy, n;
+      for (xx = xa; xx <= xb; xx++) { n = 0; for (yy = r.a; yy <= r.b; yy++) n += m[yy * aw + xx]; if (n >= 0.9 * r.n) { cur++; if (cur > best) best = cur; } else cur = 0; }
+      return best / r.n;
+    }
+    var furniture = rowRuns.filter(function (r) { return r.n >= 14 && solid(r) > 1.1; });
+    rowRuns = rowRuns.filter(function (r) { return r.n < 14 || solid(r) <= 1.1; });
     var tall = rowRuns.filter(function (r) { return r.n >= 14; });
     if (!tall.length) return null;
     /* fit the columns twice: first over every tall run to get a rough pitch, then again over only
@@ -195,6 +207,26 @@
       s.items.forEach(function (it) { rows.push({ y: area.y + off + Math.round((it.c - c0) / p) * p, section: si, clipped: it.clipped }); });
     });
     if (!rows.length) return null;
+    /* Is this really the bank?  Shops, reward screens and the backpack share the background colour
+       and can show a lattice of things (even a line of text passed for six "items").  Only the bank
+       has its row of tab buttons directly above the items: solid furniture whose button edges
+       repeat at about 1.09 slot widths (48px at 44px slots).  No such row above the first item
+       row -> not a bank. */
+    var firstTop = Math.min.apply(null, rows.map(function (q) { return q.y; })) - area.y - p / 2, tabBar = false;
+    furniture.forEach(function (r) {
+      if (tabBar || r.b > firstTop + 2 || r.n > 1.2 * p) return;
+      var starts = [], run = 0, xx, yy, n;
+      for (xx = xa; xx <= xb + 1; xx++) {
+        n = 0; if (xx <= xb) for (yy = r.a; yy <= r.b; yy++) n += m[yy * aw + xx];
+        if (xx <= xb && n >= 0.9 * r.n) { if (!run) starts.push(xx); run++; } else run = 0;
+      }
+      for (var step = 1.0 * p; step <= 1.2 * p && !tabBar; step += 0.5) starts.forEach(function (s0) {
+        var hits = 0, k2;
+        for (k2 = 0; s0 + k2 * step <= xb; k2++) if (starts.some(function (q) { return Math.abs(q - (s0 + k2 * step)) <= 2; })) hits++;
+        if (hits >= 5) tabBar = true;
+      });
+    });
+    if (!tabBar) return null;
     return { pitch: p, cols: cols, rows: rows, x: area.x + xa, y: area.y, w: sw, h: ah, residual: res };
   }
   function widestBlob(m, aw, xa, xb, y) {

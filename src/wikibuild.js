@@ -29,12 +29,23 @@
     });
   }
 
-  /* opts: {category, onProgress(state), isCancelled()} -> Promise<{names, files, patches}> */
+  /* opts: {category, onProgress(state), isCancelled(), onCheckpoint(lib)} -> Promise<{names, files, patches}>
+     Listing and icon fetching run side by side: icons start arriving within seconds, Stop keeps
+     whatever has been fetched at any point, and a checkpoint is handed out every 4000 icons so a
+     closed window does not lose the lot. */
   function build(opts) {
-    var cat = opts.category || "Items", wanted = [], seen = {}, state = { phase: "listing", pages: 0, files: 0, done: 0, kept: 0, failed: 0, note: "" };
-    function progress() { if (opts.onProgress) opts.onProgress(state); }
+    var cat = opts.category || "Items", wanted = [], seen = {}, next = 0, listed = false, failedList = null;
+    var names = [], files = [], parts = [], lastCheckpoint = 0;
+    var state = { phase: "working", pages: 0, files: 0, done: 0, kept: 0, failed: 0, listed: false };
+    function cancelled() { return !!(opts.isCancelled && opts.isCancelled()); }
+    function progress() { state.files = wanted.length; state.listed = listed; if (opts.onProgress) opts.onProgress(state); }
+    function pack() {
+      var patches = new Uint8Array(parts.length * WikiLib.BYTES);
+      parts.forEach(function (p, i) { patches.set(p, i * WikiLib.BYTES); });
+      return { names: names.slice(), files: files.slice(), patches: patches, category: cat, at: Date.now(), complete: listed && next >= wanted.length && !cancelled() };
+    }
     function listAll(cont) {
-      if (opts.isCancelled && opts.isCancelled()) return Promise.resolve();
+      if (cancelled()) return Promise.resolve();
       var url = API + "?action=query&format=json&origin=*&generator=categorymembers&gcmtitle=" + encodeURIComponent("Category:" + cat) + "&gcmnamespace=0&gcmlimit=50&prop=images&imlimit=500", k;
       for (k in (cont || {})) url += "&" + encodeURIComponent(k) + "=" + encodeURIComponent(cont[k]);
       return fetch(url).then(function (r) { if (!r.ok) throw new Error("wiki said HTTP " + r.status); return r.json(); }).then(function (j) {
@@ -47,31 +58,29 @@
             if (nm && !seen[im.title]) { seen[im.title] = 1; wanted.push({ file: im.title.replace(/^File:/i, ""), name: nm }); }
           });
         }
-        state.files = wanted.length; progress();
-        if (j["continue"]) return wait(120).then(function () { return listAll(j["continue"]); });
+        progress();
+        if (j["continue"]) return wait(40).then(function () { return listAll(j["continue"]); });
       });
     }
-    return listAll(null).then(function () {
-      if (!wanted.length) throw new Error("the category \"" + cat + "\" gave no item icons (" + state.pages + " pages looked at) - is the category name right?");
-      state.phase = "icons"; progress();
-      var names = [], files = [], parts = [], next = 0;
-      function worker() {
-        if (next >= wanted.length || (opts.isCancelled && opts.isCancelled())) return Promise.resolve();
-        var w = wanted[next++];
-        return loadIcon(w.file).then(function (pt) {
-          state.done++;
-          if (pt) { names.push(w.name); files.push(w.file); parts.push(pt); state.kept++; } else state.failed++;
-          if (state.done % 25 === 0) progress();
-          return worker();
-        });
-      }
-      var pool = []; for (var i = 0; i < 6; i++) pool.push(worker());
-      return Promise.all(pool).then(function () {
-        var patches = new Uint8Array(parts.length * WikiLib.BYTES);
-        parts.forEach(function (p, i2) { patches.set(p, i2 * WikiLib.BYTES); });
-        state.phase = (opts.isCancelled && opts.isCancelled()) ? "stopped" : "finished"; progress();
-        return { names: names, files: files, patches: patches, category: cat, at: Date.now() };
+    function worker() {
+      if (cancelled()) return Promise.resolve();
+      if (next >= wanted.length) return listed ? Promise.resolve() : wait(250).then(worker);      /* wait for the list to grow */
+      var w = wanted[next++];
+      return loadIcon(w.file).then(function (pt) {
+        state.done++;
+        if (pt) { names.push(w.name); files.push(w.file); parts.push(pt); state.kept++; } else state.failed++;
+        if (state.done % 25 === 0) progress();
+        if (opts.onCheckpoint && parts.length - lastCheckpoint >= 4000) { lastCheckpoint = parts.length; try { opts.onCheckpoint(pack()); } catch (e) { /* best effort */ } }
+        return worker();
       });
+    }
+    var listing = listAll(null).catch(function (e) { failedList = e; }).then(function () { listed = true; progress(); });
+    var pool = [listing]; for (var i = 0; i < 10; i++) pool.push(worker());
+    return Promise.all(pool).then(function () {
+      if (!parts.length) throw (failedList || new Error("the category \"" + cat + "\" gave no item icons (" + state.pages + " pages looked at) - is the category name right?"));
+      state.phase = cancelled() ? "stopped" : "finished"; progress();
+      var out = pack(); if (failedList) out.note = "the item list stopped early: " + failedList.message;
+      return out;
     });
   }
 
