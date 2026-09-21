@@ -2,7 +2,7 @@
    draws value/verdict markers over the game and explains each verdict. */
 (function () {
   "use strict";
-  var VERSION = "0.8.7";
+  var VERSION = "0.8.9";
   var READ_MS = 700, HOVER_MS = 250, OVERLAY_MS = 2500, OVERLAY_GROUP = "bankwise";
   function $(id) { return document.getElementById(id); }
   var store = {
@@ -118,14 +118,30 @@
     var g = { v: 3, tier: c.t || (w && w.tier) || 0, cls: c.st[0] === "all" ? (w && w.cls) || "" : c.st[0], slot: (w && w.slot) || c.s, type: w && w.type || "", stats: w && w.stats || {}, value: w && w.value, alchable: w ? w.alchable : null, curated: true };
     return g;
   }
+  /* kinds whose names already say what they are; coins, runes and teleports are linked from half the quests in the game */
+  var NOT_QUESTY = { currency: 1, teleport: 1, runes: 1, potion: 1, food: 1, clue: 1, keys: 1, holiday: 1, ammo: 1, seeds: 1 };
   function info(name, forCard) {
-    var it = Data.describe(name);
-    it.kind = Kinds.kindOf(name, it.cats);
+    var it = Data.describe(name), wikiSaysQuest = !!it.questItem;
+    /* the wiki does not file every quest item or quest reward under a category that says so, but its opening text
+       usually does ("is used in The Feud quest", "a reward from the quest ..."): for untradeable items that counts too */
+    if (it.tradeable === false && it.blurb) {
+      var open = it.blurb.slice(0, 500);
+      if (/\brewards?\b[^.]{0,60}\bquest\b|\bquest\b[^.]{0,40}\brewards?\b/i.test(open)) it.cats = it.cats.concat(["Quest rewards"]);
+      else if (/\b(used|needed|required|obtained|made|found|received|given|worn|created)\b[^.]{0,100}\bquest\b|\bquest item\b/i.test(open)) { it.cats = it.cats.concat(["Quest items"]); it.questItem = true; }
+    }
+    /* and the surest sign of all: a quest's own page lists it.  Asked for untradeable items only - quests link to
+       every rope and rune they mention, and those are not quest items */
+    if (it.tradeable === false && it.known && !NOT_QUESTY[Kinds.kindOf(name, [])]) {
+      it.quests = Data.questsFor(name);
+      if (it.quests && it.quests.length && it.cats.indexOf("Quest rewards") < 0 && it.cats.indexOf("Quest items") < 0) { it.cats = it.cats.concat(["Quest items"]); it.questByLinks = true; }
+    }
+    it.kind = Kinds.kindOf(name, it.cats, it.tradeable === false);
+    it.questSure = wikiSaysQuest;      /* the wiki's own quest-item category, not our reading of links or text */
     it.tab = Kinds.tabFor(it.kind, settings.template, name);
     it.upgradeable = Kinds.upgradeable(name);
     /* the item page's own text (stats, shop value, alchable) is only fetched when it can matter:
        for the card of a piece of gear, for the outgrown-gear rule, and before telling anyone to destroy something */
-    if (forCard && GEAR_KINDS[it.kind]) it.gear = gearOf(name, true);
+    if (forCard && (GEAR_KINDS[it.kind] || it.kind === "quest" || it.kind === "keepsake")) it.gear = gearOf(name, true);      /* quest items and rewards are often worn too */
     else if (settings.useSkills && profile && profile.levels && it.tradeable && !it.upgradeable && (it.kind === "weapon" || it.kind === "armour")) it.gear = gearOf(name, !Gear.lookup(name));
     if (!it.gear && !it.alch && Verdict.judge(it, settings, profile, Kinds).id === "destroy") it.gear = Data.gearFor(name);
     it.verdict = Verdict.judge(it, settings, profile, Kinds);
@@ -404,12 +420,14 @@
     if (it.kind === "teleport") { var to = Kinds.teleportsTo(it.name); 
       /* the wiki's own sentence only when it is a whole sentence and the five lines above do not already say where it goes */
       facts = to ? "Teleports to: " + to : (it.tele && /^[A-Z]/.test(it.tele) && /[.!?]$/.test(it.tele) && !/teleport/i.test(String(it.blurb || "").slice(0, 320)) ? it.tele : ""); }
-    else if (GEAR_KINDS[it.kind]) {
+    else if (GEAR_KINDS[it.kind] || (it.gear && it.gear.slot)) {
       var g = it.gear;
       if (g === null || g === undefined) facts = "Looking up its stats...";
       else {
-        var bits = [], what = [g.cls, g.type && g.type !== g.cls ? g.type : "", g.slot].filter(Boolean).join(" ");
+        /* the wiki's class "none" / "all" means it belongs to no combat style: say that, not "None head" */
+        var styled = g.cls && !/^(none|all|hybrid|n\/a)$/i.test(g.cls), bits = [], what = [styled ? g.cls : "", g.type && g.type !== g.cls && !/^(none|n\/a)$/i.test(g.type) ? g.type : "", g.slot ? g.slot + (styled ? "" : " slot") : ""].filter(Boolean).join(" ");
         if (what) bits.push(what.charAt(0).toUpperCase() + what.slice(1));
+        if (!styled && g.slot) bits.push(g.tier || Object.keys(g.stats || {}).length ? "no combat style" : "no combat stats - worn for looks or for what it unlocks");
         if (g.tier) bits.push("tier " + g.tier);
         for (var sk in (g.stats || {})) bits.push(sk + " " + g.stats[sk]);
         facts = bits.join(" \u00b7 ");
@@ -419,7 +437,7 @@
     $("hwiki").style.display = ""; $("hwiki").setAttribute("data-url", Data.wikiUrl(it.wikiTitle));
     var qhtml = "&nbsp;";
     if (it.questItem || it.kind === "quest" || it.kind === "keepsake") {
-      var qs = Data.questsFor(it.name);
+      var qs = it.quests !== undefined ? it.quests : Data.questsFor(it.name);
       if (qs === null) qhtml = "Looking up its quests...";
       else if (!qs.length) qhtml = "The wiki does not say which quest it belongs to.";
       else qhtml = (it.kind === "keepsake" ? "From: " : "Needed for: ") + qs.slice(0, 6).map(function (q) {

@@ -228,21 +228,48 @@
     }).catch(function (e) { questsLoading = false; status.quests = "quest list unavailable - " + e.message; });
   }
   /* -> [quest titles] (possibly empty), or null while it is still being worked out */
+  /* Three places say an item belongs to a quest: a category of the item named after the quest, a link from the
+     item's page to the quest, and - the one that catches most - a link from the QUEST's page (or its quick guide)
+     to the item, which is how "items required" are written.  Asked for a handful of items at a time. */
+  var questQueue = [], questTimer = null;
   function questsFor(name) {
     var k = key(name), f = facts[k];
     if (!f) { factsFor(name); return null; }
-    if (f.quests) return f.quests;
+    if (f.quests && f.qv === 2) return f.quests;
+    if (f.missing) { f.quests = []; f.qv = 2; return f.quests; }
     if (!quests) { loadQuests(); return null; }
-    var byCat = (f.cats || []).filter(function (c) { return quests[nk(c)]; }).map(function (c) { return quests[nk(c)]; });
-    if (byCat.length || f.missing) { f.quests = byCat; saveFacts(); return byCat; }
-    if (questPending[k]) return null;
-    questPending[k] = 1;
-    fetch(WIKI_API + "?action=query&format=json&origin=*&redirects=1&prop=links&plnamespace=0&pllimit=max&titles=" + encodeURIComponent(f.title || name)).then(function (r) { return r.json(); }).then(function (j) {
-      var pages = j && j.query && j.query.pages || {}, out = [], id;
-      for (id in pages) (pages[id].links || []).forEach(function (l) { var q = quests[nk(l.title)]; if (q && out.indexOf(q) < 0) out.push(q); });
-      f.quests = out; saveFacts(); delete questPending[k]; changed();
-    }).catch(function () { delete questPending[k]; });
+    if (!questPending[k]) { questPending[k] = 1; questQueue.push(name); if (!questTimer) questTimer = setTimeout(flushQuests, 500); }
     return null;
+  }
+  function questTitle(t) { return quests[nk(String(t || "").split("/")[0])] || null; }      /* "Nature Spirit/Quick guide" counts as Nature Spirit */
+  function flushQuests() {
+    questTimer = null;
+    var batch = questQueue.splice(0, 10);
+    if (!batch.length) return;
+    var found = {}, base = WIKI_API + "?action=query&format=json&origin=*&redirects=1&prop=links%7Clinkshere&plnamespace=0&pllimit=max&lhnamespace=0&lhprop=title&lhlimit=max&titles=" +
+      encodeURIComponent(batch.map(function (n) { return (facts[key(n)] && facts[key(n)].title) || n; }).join("|"));
+    function add(title, q) { if (q) { (found[title] || (found[title] = [])); if (found[title].indexOf(q) < 0) found[title].push(q); } }
+    (function page(url, depth) {
+      return fetch(url).then(function (r) { return r.json(); }).then(function (j) {
+        var pages = j && j.query && j.query.pages || {}, id, c, more = "";
+        for (id in pages) {
+          var pg = pages[id];
+          (pg.links || []).forEach(function (l) { add(pg.title, questTitle(l.title)); });
+          (pg.linkshere || []).forEach(function (l) { add(pg.title, questTitle(l.title)); });
+        }
+        if (j && j["continue"] && depth < 8) { for (c in j["continue"]) more += "&" + c + "=" + encodeURIComponent(j["continue"][c]); return page(base + more, depth + 1); }
+      });
+    })(base, 0).then(function () {
+      batch.forEach(function (n) {
+        var k = key(n), f = facts[k]; delete questPending[k];
+        if (!f) return;
+        var byCat = (f.cats || []).map(questTitle).filter(Boolean), linked = found[f.title || n] || [], out = byCat.slice();
+        linked.forEach(function (q) { if (out.indexOf(q) < 0) out.push(q); });
+        f.quests = out; f.qv = 2; f.questCat = byCat.length > 0;
+      });
+      saveFacts(); changed();
+      if (questQueue.length) questTimer = setTimeout(flushQuests, 1000);
+    }).catch(function (e) { batch.forEach(function (n) { delete questPending[key(n)]; }); status.lastError = "quests: " + e.message; });
   }
 
   /* ---------- gear tier (for "you have outgrown this") ---------- */

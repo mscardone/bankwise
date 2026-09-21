@@ -86,6 +86,15 @@
 
     /* only things whose whole point is the quest: a teleport, rune or potion that a quest also uses keeps its own kind */
     if (item.kind === "quest") {
+      /* the quests the wiki ties it to (item.quests), checked against the player's quest log */
+      if (opts.useQuests && profile && profile.quests && item.quests && item.quests.length) {
+        var open = [], done = [];
+        item.quests.forEach(function (t) { var st = profile.quests[norm(t)]; if (st && st.status === "COMPLETED") done.push(t); else open.push(t + (st && st.status === "STARTED" ? " (in progress)" : "")); });
+        if (open.length) return { id: "keep", tag: "K", reason: "Still needed for " + open.slice(0, 3).join(", ") + (open.length > 3 ? " and " + (open.length - 3) + " more" : "") + "." };
+        /* every quest done.  When only page links tie it to those quests (no quest-item category), it may well have another use: leave the call to the player */
+        if (!item.questSure) return { id: "review", tag: "Q", reason: "Every quest the wiki links it to is finished (" + done.slice(0, 3).join(", ") + "). Check its wiki page for another use before getting rid of it." };
+        return { id: "destroy", tag: "Q", reason: "Quest item for " + done.slice(0, 3).join(", ") + ", which you have finished. Check the wiki page for a post-quest use before dropping it." };
+      }
       var q = opts.useQuests ? questOf(item, profile) : null;
       if (q && q.status === "COMPLETED") return { id: "destroy", tag: "Q", reason: "Quest item for " + q.title + ", which you have finished. Check the wiki page for a post-quest use before dropping it." };
       if (q) return { id: "keep", tag: "K", reason: "Needed for " + q.title + " (" + (q.status === "STARTED" ? "in progress" : "not started") + ")." };

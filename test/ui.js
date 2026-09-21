@@ -35,11 +35,11 @@ const { spawn } = require('child_process'); const path = require('path'), fs = r
       return r.fulfill({ json: second ? { query: { pages } } : { continue: { gcmcontinue: 'page|x', continue: 'gcmcontinue||' }, query: { pages } }, headers: { 'access-control-allow-origin': '*' } });
     }
     const url = r.request().url(), cors = { 'access-control-allow-origin': '*' };
-    if (/cmtitle=Category(:|%3A)Quests/.test(url)) { const m = [{ title: 'While Guthix Sleeps' }, { title: 'Holy Grail' }]; for (let k = 0; k < 60; k++) m.push({ title: 'Filler quest ' + k }); return r.fulfill({ json: { query: { categorymembers: m } }, headers: cors }); }
+    if (/cmtitle=Category(:|%3A)Quests/.test(url)) { const m = [{ title: 'While Guthix Sleeps' }, { title: 'Holy Grail' }, { title: 'Nature Spirit' }]; for (let k = 0; k < 60; k++) m.push({ title: 'Filler quest ' + k }); return r.fulfill({ json: { query: { categorymembers: m } }, headers: cors }); }
     const titles = decodeURIComponent((url.match(/titles=([^&]*)/) || [])[1] || '').split('|'); const pages = {}; let i = 1;
-    if (/prop=links/.test(url)) { titles.forEach(t => { pages[i++] = { title: t, links: /excalibur/i.test(t) ? [{ title: 'Holy Grail' }, { title: 'Sword' }] : [] }; }); return r.fulfill({ json: { query: { pages } }, headers: cors }); }
+    if (/prop=links/.test(url)) { titles.forEach(t => { pages[i++] = { title: t, links: /excalibur/i.test(t) ? [{ title: 'Holy Grail' }, { title: 'Sword' }] : [], linkshere: /silver sickle/i.test(t) ? [{ title: 'Nature Spirit/Quick guide' }, { title: 'Morytania' }] : [] }; }); return r.fulfill({ json: { query: { pages } }, headers: cors }); }
     if (/rvprop=content/.test(url) && !/^Module:GE/.test(titles[0])) {   // item pages as wikitext: the combat-stats box
-      titles.forEach(t => { pages[i++] = { title: t, revisions: [{ slots: { main: { '*': /^mask of sliske$/i.test(t) ? "'''Mask of Sliske''' may refer to:\n* The [[Mask of Sliske, Light]], a reward\n* [[Mask of Sliske, Shadow]]\n{{Disambig}}" : /rune scimitar/i.test(t) ? "{{Infobox Bonuses\n|class = melee\n|slot = main hand weapon\n|tier = 50\n}}" : /noxious/i.test(t) ? "{{Infobox Bonuses\n|class=melee\n|slot=2h\n|tier=90\n|damage=1500\n}}" : /commorb/i.test(t) ? "{{Infobox Item\n|value = 100\n|alchable = yes\n}}" : 'no stats here' } } }] }; });
+      titles.forEach(t => { pages[i++] = { title: t, revisions: [{ slots: { main: { '*': /desert disguise/i.test(t) ? "{{Infobox Bonuses\n|class = none\n|slot = head\n|tier = \n}}" : /^mask of sliske$/i.test(t) ? "'''Mask of Sliske''' may refer to:\n* The [[Mask of Sliske, Light]], a reward\n* [[Mask of Sliske, Shadow]]\n{{Disambig}}" : /rune scimitar/i.test(t) ? "{{Infobox Bonuses\n|class = melee\n|slot = main hand weapon\n|tier = 50\n}}" : /noxious/i.test(t) ? "{{Infobox Bonuses\n|class=melee\n|slot=2h\n|tier=90\n|damage=1500\n}}" : /commorb/i.test(t) ? "{{Infobox Item\n|value = 100\n|alchable = yes\n}}" : 'no stats here' } } }] }; });
       return r.fulfill({ json: { query: { pages } }, headers: cors });
     }
     if (/^Module:GE/.test(titles[0])) {   // the wiki's own price / alch / value tables
@@ -48,7 +48,7 @@ const { spawn } = require('child_process'); const path = require('path'), fs = r
       titles.forEach(t => { pages[i++] = { title: t, revisions: [{ slots: { main: { '*': JSON.stringify(tables[t] || {}) } } }] }; });
       return r.fulfill({ json: { query: { pages } }, headers: { 'access-control-allow-origin': '*' } });
     }
-    titles.forEach(t => { if (/boits/i.test(t)) { pages[i++] = { title: t, missing: '' }; return; } const cats = /santa/i.test(t) ? ['Reclaimable from Diango', 'Holiday items'] : /commorb/i.test(t) ? ['Quest items', 'While Guthix Sleeps'] : /excalibur/i.test(t) ? ['Quest rewards', 'Items'] : /logs/i.test(t) ? ['Logs', 'Firemaking'] : ['Items']; pages[i++] = { title: t, categories: cats.map(c => ({ title: 'Category:' + c })), extract: /^mask of sliske$/i.test(t) ? 'Mask of Sliske may refer to:' : t + ' is an item in the pretend wiki. It is used for testing the detail card. ' + 'This opening paragraph goes on for a good while so that it cannot fit. '.repeat(8) + 'Last sentence of the intro.' }; });
+    titles.forEach(t => { if (/boits/i.test(t)) { pages[i++] = { title: t, missing: '' }; return; } const cats = /santa/i.test(t) ? ['Reclaimable from Diango', 'Holiday items'] : /commorb/i.test(t) ? ['Quest items', 'While Guthix Sleeps'] : /excalibur/i.test(t) ? ['Quest rewards', 'Items'] : /logs/i.test(t) ? ['Logs', 'Firemaking'] : ['Items']; pages[i++] = { title: t, categories: cats.map(c => ({ title: 'Category:' + c })), extract: /^mask of sliske$/i.test(t) ? 'Mask of Sliske may refer to:' : /desert disguise/i.test(t) ? 'The desert disguise is an item which can be worn in head slot. The disguise is used in The Feud quest. Regardless of quest progress, it can still be created.' : t + ' is an item in the pretend wiki. It is used for testing the detail card. ' + 'This opening paragraph goes on for a good while so that it cannot fit. '.repeat(8) + 'Last sentence of the intro.' }; });
     r.fulfill({ json: { query: { pages } }, headers: { 'access-control-allow-origin': '*' } });
   });
   // the Cloudflare Worker: this player's RuneMetrics profile is private, so levels come from the hiscores table
@@ -157,6 +157,14 @@ const { spawn } = require('child_process'); const path = require('path'), fs = r
     await page.hover('#list .item:has-text("Mask of Sliske")'); await page.waitForTimeout(400); await page.hover('#list .item:has-text("Magic logs")'); await page.hover('#list .item:has-text("Mask of Sliske")');
     const dis = await page.evaluate(() => ({ blurb: document.getElementById('hblurb').textContent, wiki: document.getElementById('hwiki').getAttribute('data-url') }));
     ok('a name that lands on a "may refer to" page is described by the first page on that list', /^Mask of Sliske, Light is an item/.test(dis.blurb) && dis.wiki === 'https://runescape.wiki/w/Mask_of_Sliske,_Light', JSON.stringify(dis)); }
+  { const at = await free(0); await hover(at, 'Desert disguise'); await hover(at, 'Desert disguise'); await page.evaluate(() => { window.alt1.mousePosition = -1; window.__tip = ''; }); await page.waitForTimeout(2500);
+    await page.hover('#list .item:has-text("Desert disguise")'); await page.waitForTimeout(1500); await page.hover('#list .item:has-text("Magic logs")'); await page.hover('#list .item:has-text("Desert disguise")');
+    const dd = await page.evaluate(() => ({ stats: document.getElementById('hstats').textContent, v: document.getElementById('hverdict').textContent, tab: document.getElementById('htab').textContent }));
+    ok('an untradeable item the wiki text ties to a quest is a quest item, and "class none" reads as plain words: ' + dd.stats, /^Head slot/.test(dd.stats) && !/none/i.test(dd.stats) && /Quest item/.test(dd.v) && /Quest items/.test(dd.tab), JSON.stringify(dd)); }
+  { const at = await free(0); await hover(at, 'Silver sickle (b)'); await hover(at, 'Silver sickle (b)'); await page.evaluate(() => { window.alt1.mousePosition = -1; window.__tip = ''; }); await page.waitForTimeout(3000);
+    await page.hover('#list .item:has-text("Magic logs")'); await page.hover('#list .item:has-text("Silver sickle")'); await page.waitForTimeout(300);
+    const ss = await page.evaluate(() => ({ q: document.getElementById('hquests').textContent, tab: document.getElementById('htab').textContent, v: document.getElementById('hverdict').textContent }));
+    ok('an item that only the QUEST page links to (Silver sickle (b) <- Nature Spirit quick guide) is a quest item: ' + ss.q.trim(), /Needed for: Nature Spirit/.test(ss.q) && /Quest items/.test(ss.tab) && /^keep/.test(ss.v), JSON.stringify(ss)); }
   const btns = await page.$$eval('#filters button[data-f]', els => els.map(e => e.textContent.trim()));
   await page.click('#filters button[data-f="valuable"]');
   const val = await page.$$eval('#list .item .nm', els => els.map(e => e.textContent.trim()));
@@ -207,7 +215,7 @@ const { spawn } = require('child_process'); const path = require('path'), fs = r
 
   await page.reload(); await page.waitForTimeout(400);
   const kept = await page.evaluate(() => ({ lib: Bankwise._lib().names().length, s: Bankwise._settings }));
-  ok('library and settings survive a reload', kept.lib === 9 && kept.s.useQuests && kept.s.template === 'granular', JSON.stringify(kept));
+  ok('library and settings survive a reload', kept.lib === 11 && kept.s.useQuests && kept.s.template === 'granular', JSON.stringify(kept));
   ok('no page errors', errs.length === 0, errs.join(' | '));
 
   // the real thing: Scott's Alt1 capture with the game's tooltip showing, read by the real tooltip reader

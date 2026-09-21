@@ -57,14 +57,16 @@
   /* a name that says "sword" or "amulet" is still a quest item when the wiki files it under quest items;
      things that are plainly supplies keep their own kind whatever else they are */
   var QUEST_YIELDS_TO = { clue: 1, currency: 1, teleport: 1, runes: 1, ammo: 1, potion: 1, seeds: 1, herblore: 1, food: 1, prayer: 1, wood: 1, metal: 1, gems: 1, hides: 1 };
-  function kindOf(name, cats) {
+  /* something that cannot be traded is not a skilling supply whatever its name says ("Silver sickle (b)" is not silver to craft with) */
+  var QUEST_YIELDS_TO_UNTRADEABLE = { clue: 1, currency: 1, teleport: 1, runes: 1, potion: 1, food: 1 };
+  function kindOf(name, cats, untradeable) {
     var i, j, r, n = String(name || ""), byName = null;
     cats = cats || [];
     for (i = 0; i < RULES.length && !byName; i++) {
       r = RULES[i];
       if (r[1] && r[1].test(n)) byName = r[0];
     }
-    if (!byName || !QUEST_YIELDS_TO[byName]) {
+    if (!byName || !(untradeable ? QUEST_YIELDS_TO_UNTRADEABLE : QUEST_YIELDS_TO)[byName]) {
       /* a quest reward that Diango (or anyone) will not hand back is a keepsake, whatever it looks like */
       var reward = false, reclaim = false;
       for (j = 0; j < cats.length; j++) { if (/quest rewards?/i.test(cats[j])) reward = true; if (/diango|reclaim/i.test(cats[j])) reclaim = true; }
