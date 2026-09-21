@@ -14,7 +14,7 @@ const { spawn } = require('child_process'); const path = require('path'), fs = r
   await ctx.route('**/rs_dump.json', r => r.fulfill({ json: { '%LAST_UPDATE%': 1, 1513: { id: 1513, name: 'Magic logs', price: 412, highalch: 192, value: 320 }, 2: { id: 2, name: 'Rusty sword', price: 60, highalch: 15, value: 25 }, 3: { id: 3, name: 'Noxious scythe', price: 61000000, highalch: 300000, value: 500000 } } }));
   await ctx.route('**/runescape.wiki/api.php**', r => {
     const titles = decodeURIComponent((r.request().url().match(/titles=([^&]*)/) || [])[1] || '').split('|'); const pages = {}; let i = 1;
-    titles.forEach(t => { const cats = /santa/i.test(t) ? ['Reclaimable from Diango', 'Holiday items'] : /commorb/i.test(t) ? ['Quest items', 'While Guthix Sleeps'] : /logs/i.test(t) ? ['Logs', 'Firemaking'] : ['Items']; pages[i++] = { title: t, categories: cats.map(c => ({ title: 'Category:' + c })) }; });
+    titles.forEach(t => { if (/boits/i.test(t)) { pages[i++] = { title: t, missing: '' }; return; } const cats = /santa/i.test(t) ? ['Reclaimable from Diango', 'Holiday items'] : /commorb/i.test(t) ? ['Quest items', 'While Guthix Sleeps'] : /logs/i.test(t) ? ['Logs', 'Firemaking'] : ['Items']; pages[i++] = { title: t, categories: cats.map(c => ({ title: 'Category:' + c })) }; });
     r.fulfill({ json: { query: { pages } }, headers: { 'access-control-allow-origin': '*' } });
   });
   await ctx.route('**/runemetrics/profile/profile**', r => r.fulfill({ json: { name: 'Tester', skillvalues: [{ id: 11, level: 99 }, { id: 9, level: 99 }, { id: 22, level: 99 }, { id: 8, level: 99 }] }, headers: { 'access-control-allow-origin': '*' } }));
@@ -62,6 +62,13 @@ const { spawn } = require('child_process'); const path = require('path'), fs = r
   ok('detail card: price, tab and reason for Magic logs', /412/.test(card) && /tab 4/.test(card) && /Consumable supply/.test(card), card.replace(/\s+/g, ' '));
   await page.screenshot({ path: path.join(__dirname, '../docs/ui-learned.png') });
 
+  // the font reader's l/i slip is put right from the wiki
+  const bidx = await page.evaluate(() => { const s = Bankwise._view().slots; return s.findIndex(q => q.id.state === 'unknown'); });
+  await hover(bidx, 'Diamond boits'); await hover(bidx, 'Diamond boits');
+  await page.evaluate(() => { window.alt1.mousePosition = -1; window.__tip = ''; }); await page.waitForTimeout(1200);
+  const fixedNames = await page.evaluate(() => Bankwise._lib().names());
+  ok('"Diamond boits" is corrected to the wiki\'s spelling: ' + fixedNames.join(', '), fixedNames.includes('Diamond bolts') && !fixedNames.includes('Diamond boits'), JSON.stringify(fixedNames));
+
   // personal options are off by default, and work when switched on
   await page.click('#opensettings');
   ok('personal options start switched off', !(await page.isChecked('#usequests')) && !(await page.isChecked('#useskills')) && !(await page.isChecked('#useoverrides')));
@@ -80,7 +87,7 @@ const { spawn } = require('child_process'); const path = require('path'), fs = r
 
   await page.reload(); await page.waitForTimeout(400);
   const kept = await page.evaluate(() => ({ lib: Bankwise._lib().names().length, s: Bankwise._settings }));
-  ok('library and settings survive a reload', kept.lib === 3 && kept.s.useQuests && kept.s.template === 'granular', JSON.stringify(kept));
+  ok('library and settings survive a reload', kept.lib === 4 && kept.s.useQuests && kept.s.template === 'granular', JSON.stringify(kept));
   ok('no page errors', errs.length === 0, errs.join(' | '));
 
   // the real thing: Scott's Alt1 capture with the game's tooltip showing, read by the real tooltip reader

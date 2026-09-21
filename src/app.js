@@ -2,7 +2,7 @@
    draws value/verdict markers over the game and explains each verdict. */
 (function () {
   "use strict";
-  var VERSION = "0.3.1";
+  var VERSION = "0.4.0";
   var READ_MS = 700, HOVER_MS = 250, OVERLAY_MS = 5000, OVERLAY_GROUP = "bankwise";
   function $(id) { return document.getElementById(id); }
   var store = {
@@ -36,6 +36,7 @@
   }
 
   /* ---------- identify ---------- */
+  function named(s) { return s.id.state === "known" || s.id.state === "twin"; }   /* twin = identical icon shared by several items */
   function hash(pt) { var h = 2166136261, i; for (i = 0; i < pt.length; i++) { h ^= pt[i]; h = (h * 16777619) >>> 0; } return h.toString(36); }
   function posKey(s) { return s.x + "," + s.y; }
   function overlaps(s, a) { return a && s.x < a.x + a.width + 4 && s.x + s.w > a.x - 4 && s.y < a.y + a.height + 4 && s.y + s.h > a.y - 4; }
@@ -81,7 +82,7 @@
   }
   function drawOverlay() {
     if (!overlayOk() || !view) { clearOverlay(); return; }
-    var sig = view.slots.map(function (s) { return posKey(s) + ":" + s.id.state[1] + (s.id.state === "known" ? s.id.name : ""); }).join("|") + "#" + Data.status.prices + Data.status.facts, now = Date.now();
+    var sig = view.slots.map(function (s) { return posKey(s) + ":" + s.id.state[1] + (named(s) ? s.id.name : ""); }).join("|") + "#" + Data.status.prices + Data.status.facts, now = Date.now();
     if (sig === overlaySig && now - overlayAt < OVERLAY_MS - 1500) return;
     var c = colours();
     try {
@@ -94,6 +95,7 @@
         if (s.id.state === "unknown") { alt1.overLayRect(c.red, s.x + inset, s.y + inset, s.w - 2 * inset, s.h - 2 * inset, OVERLAY_MS, 2); return; }
         if (s.id.state === "unsure") { alt1.overLayRect(c.amber, s.x + inset, s.y + inset, s.w - 2 * inset, s.h - 2 * inset, OVERLAY_MS, 2); return; }
         var it = info(s.id.name);
+        if (s.id.state === "twin") alt1.overLayRect(c.amber, s.x + inset, s.y + inset, 4, 4, OVERLAY_MS, 2);      /* shares its icon with other items */
         if (c[it.tier.id]) alt1.overLayRect(c[it.tier.id], s.x + inset, s.y + s.h - inset - 2, s.w - 2 * inset, 2, OVERLAY_MS, 2);
         if (it.verdict.tag) {
           var col = it.verdict.id === "keep" ? c.tag : c.warn, size = Math.max(9, Math.round(s.w * 0.25));
@@ -169,12 +171,21 @@
     renderCard();
   }
   function teach(slot, name, force) {
-    var src = clean[posKey(slot)] || slot;
-    if (!force && slot.id.state === "known" && slot.id.name === name) return;
-    /* only a correction typed by the player removes what was there: two different items can share
-       one identical icon, and the tooltip naming one of them must not make the app forget the other */
+    var src = clean[posKey(slot)] || slot, was = slot.id.state;
+    if (!force && named(slot) && slot.id.name === name) return;
+    /* only a correction typed by the player removes what was there: different items can share one
+       identical icon, and the tooltip naming one of them must not make the app forget the others */
     if (force && slot.id.name && slot.id.name !== name && slot.id.state !== "unknown") lib.unlearn(slot.id.name, src.patch);
-    if (lib.add(name, src.patch, "taught", src.shifts) || force) { libVersion++; lastTaught = name; saveLibrary(); Data.factsFor(name); overlaySig = ""; }
+    var added = lib.add(name, src.patch, "taught", src.shifts);
+    if (added || force || was === "twin") { libVersion++; lastTaught = name; saveLibrary(); Data.factsFor(name); overlaySig = ""; }
+    /* the font reader confuses l and i ("Diamond boits"): if the wiki has no such item but does
+       have one a letter away, take the wiki's spelling */
+    if (added && !force) Data.resolveName(name).then(function (fixed) {
+      if (!fixed || fixed === name || !lib.byName[name]) return;
+      lib.rename(name, fixed);
+      if (nameColours[name]) { nameColours[fixed] = nameColours[name]; delete nameColours[name]; store.set("bankwise.namecolours.v1", JSON.stringify(nameColours)); }
+      libVersion++; lastTaught = fixed + " (read as " + name + ")"; saveLibrary(); Data.factsFor(fixed); overlaySig = "";
+    });
   }
 
   /* ---------- rendering ---------- */
@@ -183,7 +194,7 @@
   function render() {
     if (!view) { $("counts").innerHTML = ""; $("list").innerHTML = '<div class="empty">Nothing to show until the bank is open.</div>'; $("list")._html = ""; renderCard(); return; }
     var known = 0, unsure = 0, unknown = 0;
-    view.slots.forEach(function (s) { if (s.id.state === "known") known++; else if (s.id.state === "unsure") unsure++; else if (s.id.state !== "covered") unknown++; });
+    view.slots.forEach(function (s) { if (named(s)) known++; else if (s.id.state === "unsure") unsure++; else if (s.id.state !== "covered") unknown++; });
     setStatus(unknown + unsure ? (settings.teach ? "Sweep your mouse over the boxed items so I can learn them." : "Learning is off. Turn on Teach to learn the boxed items.") : "Every item on screen is known.", false);
     $("counts").innerHTML = "<span><b>" + view.slots.length + "</b> on screen</span><span><b>" + known + "</b> known</span><span><b>" + (unknown + unsure) + "</b> to teach</span><span><b>" + lib.names().length + "</b> in library</span>";
     renderList(); renderCard();
@@ -192,7 +203,7 @@
     var rows = [], seen = {};
     view.slots.forEach(function (s) {
       if (s.id.state === "covered") return;
-      if (s.id.state !== "known") { rows.push({ slot: s, teach: true, price: -1 }); return; }
+      if (!named(s)) { rows.push({ slot: s, teach: true, price: -1 }); return; }
       if (seen[s.id.name]) return;
       seen[s.id.name] = 1;
       var it = info(s.id.name); rows.push({ slot: s, it: it, price: it.price === null ? -0.5 : it.price });
@@ -214,7 +225,7 @@
     if (!s) { $("hicon").style.backgroundImage = ""; $("hname").textContent = view ? "Hover an item" : "Open your bank"; $("hprice").innerHTML = "&nbsp;"; $("hverdict").innerHTML = view ? "Hover an item in the bank, or a row below, to see what it is worth, where it belongs and whether to keep it." : "&nbsp;"; $("htab").innerHTML = "&nbsp;"; $("hpins").style.display = settings.useOverrides ? "" : "none"; $("hpins").style.visibility = "hidden"; $("hfix").style.visibility = "hidden"; return; }
     $("hicon").style.backgroundImage = "url(" + slotImg(s) + ")";
     $("hfix").style.visibility = ""; $("hpins").style.display = settings.useOverrides ? "" : "none";
-    if (s.id.state !== "known") {
+    if (!named(s)) {
       $("hname").style.color = "";
       $("hname").textContent = s.id.state === "unsure" ? s.id.name + "?" : "Unknown item";
       $("hprice").innerHTML = hoverSlot === s ? (tipName ? "reading: <b>" + esc(tipName) + "</b>" : "keep the mouse still until the game shows its name") : "&nbsp;";
@@ -226,7 +237,8 @@
     $("hname").textContent = it.name;
     $("hname").style.color = nameColours[it.name] ? "rgb(" + nameColours[it.name].join(",") + ")" : "";
     $("hprice").innerHTML = it.price !== null ? "<b>" + Verdict.gp(it.price) + "</b> each" + (it.alch ? " &middot; alch " + Verdict.gp(it.alch) : "") : (it.tradeable === false ? "not tradeable" : "price not loaded");
-    $("hverdict").innerHTML = '<span class="chip ' + it.verdict.id + '">' + it.verdict.id + "</span>" + esc(it.verdict.reason);
+    $("hverdict").innerHTML = '<span class="chip ' + it.verdict.id + '">' + it.verdict.id + "</span>" + esc(it.verdict.reason) +
+      (s.id.state === "twin" ? " <span class='twin'>Same icon as " + esc(s.id.twins.filter(function (n) { return n !== it.name; }).join(", ")) + " - showing the one you last hovered.</span>" : "");
     $("htab").innerHTML = "Belongs in <b>tab " + it.tab.number + " &middot; " + esc(it.tab.name) + "</b> <span title='" + esc(it.cats.slice(0, 12).join(", ")) + "'>(" + esc(Kinds.KIND_LABEL[it.kind]) + ")</span>";
     $("hpins").style.visibility = "";
     var pin = settings.overrides[Verdict.norm(it.name)] || "";
@@ -308,7 +320,7 @@
   });
   Array.prototype.forEach.call($("hpins").querySelectorAll("button"), function (b) {
     b.addEventListener("click", function () {
-      var s = shown && shown.slot; if (!s || s.id.state !== "known") return;
+      var s = shown && shown.slot; if (!s || !named(s)) return;
       var key = Verdict.norm(s.id.name), v = b.getAttribute("data-pin");
       if (v) settings.overrides[key] = v; else delete settings.overrides[key];
       changed();

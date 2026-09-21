@@ -8,7 +8,7 @@ An [Alt1 Toolkit](https://runeapps.org/alt1) app for RuneScape 3 that reads your
 
 It only reads the screen and draws markers. It never clicks, types or moves anything in the game.
 
-> **Status: v0.3.1.** Bank reading, item matching and tooltip reading are tested on real Alt1
+> **Status: v0.4.0.** Bank reading, item matching and tooltip reading are tested on real Alt1
 > captures (items match pixel-for-pixel between captures). The wiki lookups and the RuneMetrics
 > lookup have not worked live yet. See "Not proven yet" below.
 
@@ -31,7 +31,8 @@ The app needs the **pixel**, **overlay** and **game state** permissions (game st
    - a letter when there is advice: **J** junk (sell or alch), **D** reclaimable from Diango (safe to destroy), **Q** quest item for a finished quest, **K** quest item to keep.
 4. Hover an item in the bank, or a row in the app, for the detail card: price, alch value, the tab it belongs in and the reason for the verdict.
 5. The **teach** tick-box in the header switches learning from tooltips on and off. *Type the name yourself* on the card fixes a misread.
-6. An amber box means "looks like X, not sure" - hover it once to settle it. If a name was read wrongly, use *wrong name?* on the card.
+6. A small amber corner means the item shares its exact icon with other items (a ring and its enchanted version, a necklace at different charges): the app shows whichever one you hovered last and lists the rest on the card.
+7. An amber box means "looks like X, not sure" - hover it once to settle it. If a name was read wrongly, use *wrong name?* on the card.
 
 ### Settings
 

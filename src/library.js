@@ -12,7 +12,9 @@
   "use strict";
   var PW = 24, PH = 16, BLK = 3, TOP = 24;
   var MATCH = 20, UNSURE = 28;     /* worst-block colour distance: below MATCH = same item */
-  var MAX_SAMPLES = 3;
+  var MAX_SAMPLES = 8;                /* coins, arrows, runes... draw a different picture at different stack sizes */
+  var FORMAT = 2;                     /* 2: the patch starts below the whole stack number (band 0.41); v1 patches are not comparable */
+  var TWIN = 6;                       /* two names this close to the same slot are the same picture */
 
   function coarse(pt) {
     var out = new Float32Array(48), bw = PW / 4, bh = PH / 4, i, j, x, y;
@@ -60,35 +62,53 @@
   function Library() { this.samples = []; this.byName = {}; }
   Library.prototype.add = function (name, pt, source, shifts) {
     var list = this.byName[name] || (this.byName[name] = []), i, all = [pt].concat(shifts ? shifts() : []);
-    for (i = 0; i < list.length; i++) if (dist(all, list[i].patch) < MATCH * 0.6) return false;   /* already known this way */
+    /* already known this way: just note that it was seen again (twins show the most recently confirmed name) */
+    for (i = 0; i < list.length; i++) if (dist(all, list[i].patch) < MATCH * 0.6) { list[i].at = Date.now(); return false; }
     if (list.length >= MAX_SAMPLES) { var old = list.shift(); this.samples.splice(this.samples.indexOf(old), 1); }
-    var s = { name: name, patch: new Uint8Array(pt), coarse: coarse(pt), source: source || "taught" };
+    var s = { name: name, patch: new Uint8Array(pt), coarse: coarse(pt), source: source || "taught", at: Date.now() };
     list.push(s); this.samples.push(s);
     return true;
+  };
+  Library.prototype.rename = function (from, to) {
+    if (from === to || !this.byName[from]) return;
+    var dest = this.byName[to] || (this.byName[to] = []);
+    this.byName[from].forEach(function (s) { s.name = to; dest.push(s); });
+    delete this.byName[from];
   };
   Library.prototype.forget = function (name) {
     var self = this;
     (this.byName[name] || []).forEach(function (s) { self.samples.splice(self.samples.indexOf(s), 1); });
     delete this.byName[name];
   };
-  /* -> {name, d, state: "known"|"unsure"|"unknown", rival, rivalD} */
+  /* -> {name, d, state, rival, rivalD, twins}
+     state: known | twin | unsure | unknown.  "twin" = several different items are drawn with exactly
+     this picture (a ring and its enchanted version, a necklace at 8 and at 7 charges): looks can never
+     tell them apart, so the name is the one most recently confirmed by a tooltip and the others are
+     listed in `twins`. */
   Library.prototype.identify = function (pt, shifts) {
-    if (!this.samples.length) return { state: "unknown", d: Infinity };
+    if (!this.samples.length) return { state: "unknown", d: Infinity, rivalD: Infinity };
     var c = coarse(pt), cand = this.samples.map(function (s) { return { s: s, c: coarseDist(c, s.coarse) }; });
     cand.sort(function (p, q) { return p.c - q.c; });
-    var best = null, rival = null, all = null, i, pass, top = Math.min(cand.length, TOP);
+    var all = null, i, pass, top = Math.min(cand.length, TOP), byName;
     /* pass 0 compares the slot as cut; only if nothing fits almost exactly is every small offset tried */
     for (pass = 0; pass < 2; pass++) {
-      best = null; rival = null;
+      byName = {};
       if (pass) all = [pt].concat(shifts ? shifts() : []);
       for (i = 0; i < top; i++) {
-        var d = dist(pass ? all : pt, cand[i].s.patch), e = { name: cand[i].s.name, d: d };
-        if (!best || d < best.d) { if (best && best.name !== e.name) rival = best; best = e; }
-        else if (e.name !== best.name && (!rival || d < rival.d)) rival = e;
+        var d = dist(pass ? all : pt, cand[i].s.patch), e = byName[cand[i].s.name];
+        if (!e || d < e.d) byName[cand[i].s.name] = { name: cand[i].s.name, d: d, at: cand[i].s.at || 0 };
       }
-      if (best.d < 4 || !shifts) break;
+      var low = 1e9; for (i in byName) if (byName[i].d < low) low = byName[i].d;
+      if (low < 4 || !shifts) break;
     }
-    var out = { name: best.name, d: best.d, rival: rival ? rival.name : null, rivalD: rival ? rival.d : Infinity };
+    var ranked = Object.keys(byName).map(function (k) { return byName[k]; }).sort(function (p, q) { return p.d - q.d; });
+    var best = ranked[0], twins = ranked.filter(function (q) { return q.d <= TWIN && q.d - best.d <= 3; });
+    if (best.d <= TWIN && twins.length > 1) {
+      twins.sort(function (p, q) { return q.at - p.at; });
+      var rest = ranked.filter(function (q) { return twins.indexOf(q) < 0; })[0];
+      return { state: "twin", name: twins[0].name, d: twins[0].d, twins: twins.map(function (q) { return q.name; }), rival: rest ? rest.name : null, rivalD: rest ? rest.d : Infinity };
+    }
+    var rival = ranked[1] || null, out = { name: best.name, d: best.d, rival: rival ? rival.name : null, rivalD: rival ? rival.d : Infinity };
     if (best.d <= MATCH && (!rival || rival.d > best.d * 1.35 || rival.d > MATCH)) out.state = "known";
     else if (best.d <= UNSURE) out.state = "unsure";
     else out.state = "unknown";
@@ -102,16 +122,16 @@
   };
   Library.prototype.names = function () { return Object.keys(this.byName); };
   Library.prototype.toJSON = function () {
-    return { v: 1, pw: PW, ph: PH, items: this.samples.map(function (s) { return { n: s.name, p: b64(s.patch), s: s.source }; }) };
+    return { v: FORMAT, pw: PW, ph: PH, items: this.samples.map(function (s) { return { n: s.name, p: b64(s.patch), s: s.source, t: s.at || 0 }; }) };
   };
   Library.fromJSON = function (o) {
     var lib = new Library();
-    if (o && o.v === 1 && o.pw === PW && o.ph === PH) (o.items || []).forEach(function (it) {
-      try { var pt = unb64(it.p); if (pt.length === PW * PH * 3) { var s = { name: it.n, patch: pt, coarse: coarse(pt), source: it.s || "taught" }; (lib.byName[it.n] || (lib.byName[it.n] = [])).push(s); lib.samples.push(s); } } catch (e) { /* skip a damaged entry */ }
+    if (o && o.v === FORMAT && o.pw === PW && o.ph === PH) (o.items || []).forEach(function (it) {
+      try { var pt = unb64(it.p); if (pt.length === PW * PH * 3) { var s = { name: it.n, patch: pt, coarse: coarse(pt), source: it.s || "taught", at: it.t || 0 }; (lib.byName[it.n] || (lib.byName[it.n] = [])).push(s); lib.samples.push(s); } } catch (e) { /* skip a damaged entry */ }
     });
     return lib;
   };
   Library.dist = dist; Library.coarse = coarse; Library.coarseDist = coarseDist;
-  Library.MATCH = MATCH; Library.UNSURE = UNSURE;
+  Library.MATCH = MATCH; Library.UNSURE = UNSURE; Library.FORMAT = FORMAT;
   return Library;
 });

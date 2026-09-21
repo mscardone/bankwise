@@ -85,3 +85,5 @@ footer{margin-top:8px}
 #dbgout{font:9px/1.15 Consolas,monospace;color:var(--dim);white-space:pre-wrap;overflow:auto;max-height:260px;
   background:#141310;border:1px solid var(--line);border-radius:4px;padding:5px;-webkit-user-select:text;user-select:text}
 #dbgout a{color:var(--blue)}
+
+.twin{color:var(--amber)}

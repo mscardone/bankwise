@@ -107,10 +107,16 @@ console.log("real captures");
   var w = tip.area.whole, right = 0, wrong = [], twins = [], covered = 0;
   hover.slots.forEach(function (s) {
     if (s.x < w.x + w.width + 4 && s.x + s.w > w.x - 4 && s.y < w.y + w.height + 4 && s.y + s.h > w.y - 4) { covered++; return; }
-    var id = lib.identify(s.patch, s.shifts); if (id.state === "known" && id.name === "p" + s.x + "," + s.y) right++; else if (id.state === "known") wrong.push(s.x + "," + s.y + " -> " + id.name); else twins.push(s.x + "," + s.y + " d=" + id.d.toFixed(1) + " rival d=" + id.rivalD.toFixed(1));
+    var id = lib.identify(s.patch, s.shifts), me = "p" + s.x + "," + s.y;
+    if (id.state === "known" && id.name === me) right++; else if (id.state === "twin" && id.twins.indexOf(me) >= 0) twins.push(me + " = " + id.twins.length + " alike"); else wrong.push(me + " -> " + id.state + " " + id.name);
   });
-  ok("same items recognised between the two captures: " + right + " of " + (hover.slots.length - covered) + " pixel-exact (" + covered + " behind the tooltip), none wrong", !wrong.length && right >= 175, wrong.join("  "));
-  ok("three different items in this bank share one identical icon -> reported as unsure, never guessed: " + twins.join(" | "), twins.length === 3 && twins.every(function (t) { return /d=0.0 rival d=0.0/.test(t); }), twins.join(" | "));
+  ok("same items recognised between the two captures: " + right + " told apart + " + twins.length + " in look-alike groups of " + (hover.slots.length - covered) + " (" + covered + " behind the tooltip), none wrong", !wrong.length && right >= 150, wrong.join("  "));
+  ok("items drawn with one identical picture (enchanted jewellery, charges...) are grouped, not guessed: " + twins.length + " slots", twins.length >= 3 && twins.length <= 20, twins.join(" | "));
+  /* a twin shows whichever name a tooltip confirmed last */
+  var tw = hover.slots.filter(function (q) { return lib.identify(q.patch, q.shifts).state === "twin"; })[0], names = lib.identify(tw.patch, tw.shifts).twins;
+  lib.add(names[names.length - 1], tw.patch, "test", tw.shifts);
+  ok("a look-alike shows the name confirmed most recently", lib.identify(tw.patch, tw.shifts).name === names[names.length - 1]);
+  lib.rename(names[0], "Renamed item"); ok("rename keeps the samples", !lib.byName[names[0]] && lib.byName["Renamed item"].length >= 1);
 })();
 console.log(fails ? fails + " FAILED" : "all checks passed");
 process.exit(fails ? 1 : 0);

@@ -86,6 +86,30 @@
     }));
   }
 
+  /* ---------- does the wiki know this name?  if not, is there one an l/i swap away? ---------- */
+  function variants(name) {
+    var pos = [], out = [], i, j;
+    for (i = 0; i < name.length; i++) if (/[ilI]/.test(name[i])) pos.push(i);
+    function swap(str, k) { var ch = str[k], to = ch === "i" ? "l" : ch === "l" ? "i" : ch === "I" ? "l" : ch; return str.slice(0, k) + to + str.slice(k + 1); }
+    for (i = 0; i < pos.length; i++) out.push(swap(name, pos[i]));                       /* one letter wrong first... */
+    for (i = 0; i < pos.length; i++) for (j = i + 1; j < pos.length && out.length < 30; j++) out.push(swap(swap(name, pos[i]), pos[j]));   /* ...then two */
+    return out;
+  }
+  function resolveName(name) {
+    var vs = variants(name);
+    if (!vs.length) return Promise.resolve(null);
+    var titles = [name].concat(vs), url = WIKI_API + "?action=query&format=json&origin=*&redirects=1&titles=" + encodeURIComponent(titles.join("|"));
+    return fetch(url).then(function (r) { return r.json(); }).then(function (j) {
+      var q = j && j.query || {}, fwd = {}, exists = {}, id;
+      (q.normalized || []).concat(q.redirects || []).forEach(function (r) { fwd[r.from] = r.to; });
+      for (id in (q.pages || {})) if (q.pages[id].missing === undefined && q.pages[id].invalid === undefined) exists[q.pages[id].title] = 1;
+      function final(t) { var g = 0; while (fwd[t] && g++ < 4) t = fwd[t]; return t; }
+      if (exists[final(name)]) return null;
+      for (var i = 0; i < vs.length; i++) if (exists[final(vs[i])]) return vs[i];
+      return null;
+    }).catch(function () { return null; });
+  }
+
   /* ---------- facts (wiki categories) ---------- */
   function loadFacts() { try { facts = JSON.parse(store.get("bankwise.facts.v1") || "{}") || {}; } catch (e) { facts = {}; } }
   function saveFacts() { store.set("bankwise.facts.v1", JSON.stringify(facts)); }
@@ -145,7 +169,7 @@
 
   loadFacts();
   return {
-    loadPrices: loadPrices, selfTest: selfTest, price: price, pricesLoaded: pricesLoaded, factsFor: factsFor, describe: describe, status: status,
+    loadPrices: loadPrices, selfTest: selfTest, resolveName: resolveName, _variants: variants, price: price, pricesLoaded: pricesLoaded, factsFor: factsFor, describe: describe, status: status,
     onChange: function (f) { listeners.push(f); }, key: key,
     clearCache: function () { facts = {}; saveFacts(); prices = null; pricesAt = 0; store.set("bankwise.prices.v1", "null"); },
     _parseDump: parseDump, _collect: collect, _facts: function () { return facts; }

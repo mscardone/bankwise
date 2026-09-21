@@ -19,7 +19,9 @@
   var BG = [51, 46, 41], BG_TOL = 18;      /* flat colour behind the bank's items */
   var CELL = 32;                           /* coarse cell for finding the bank */
   var PW = 24, PH = 16;                    /* canonical patch size */
-  var NUM_BAND = 0.32;                     /* top of the slot, where the stack number is drawn */
+  var NUM_BAND = 0.41;                     /* top of the slot, where the stack number is drawn: digits reach row 15 of 44 plus
+                                              a shadow row, and the lattice can be a pixel out - at 0.32 the digit bottoms were
+                                              inside the patch, so a stack that changed size had to be learned again */
   var SIDE = 0.09;                         /* slot margin left and right */
 
   function isBg(d, p) {
