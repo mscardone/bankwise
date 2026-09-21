@@ -89,6 +89,8 @@ footer{margin-top:8px}
 
 .twin{color:var(--amber)}
 #hblurb{margin-top:5px;font-size:11px;line-height:1.35;height:30px;overflow:hidden;color:var(--text);opacity:.85}
+#hstats{font-size:11px;line-height:1.35;height:30px;overflow:hidden;color:var(--gold)}
+.chip.alch{background:var(--gold)} .chip.diango{background:var(--blue)}
 #hquests{font-size:11px;line-height:1.35;height:30px;overflow:hidden;color:var(--dim)}
 #hquests a,#hfix a.ext{color:var(--blue)}
 #hquests .done{text-decoration:line-through;opacity:.7}

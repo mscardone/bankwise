@@ -2,7 +2,7 @@
    draws value/verdict markers over the game and explains each verdict. */
 (function () {
   "use strict";
-  var VERSION = "0.8.3";
+  var VERSION = "0.8.4";
   var READ_MS = 700, HOVER_MS = 250, OVERLAY_MS = 5000, OVERLAY_GROUP = "bankwise";
   function $(id) { return document.getElementById(id); }
   var store = {
@@ -109,14 +109,18 @@
       if (!under) clean[pk] = { patch: s.patch, shifts: s.shifts, hash: s.hash, at: Date.now() };
     });
   }
-  function info(name) {
+  var GEAR_KINDS = { weapon: 1, armour: 1, ammo: 1, jewellery: 1 };
+  function info(name, forCard) {
     var it = Data.describe(name);
     it.kind = Kinds.kindOf(name, it.cats);
     it.tab = Kinds.tabFor(it.kind, settings.template, name);
     it.upgradeable = Kinds.upgradeable(name);
-    /* gear tier is only looked up when it can matter: skills on, levels loaded, tradeable weapon or armour */
-    if (settings.useSkills && profile && profile.levels && it.tradeable && !it.upgradeable && (it.kind === "weapon" || it.kind === "armour")) it.gear = Data.gearFor(name);
+    /* the item page's own text (stats, shop value, alchable) is only fetched when it can matter:
+       for the card of a piece of gear, for the outgrown-gear rule, and before telling anyone to destroy something */
+    if ((forCard && GEAR_KINDS[it.kind]) || (settings.useSkills && profile && profile.levels && it.tradeable && !it.upgradeable && (it.kind === "weapon" || it.kind === "armour"))) it.gear = Data.gearFor(name);
+    if (!it.gear && !it.alch && Verdict.judge(it, settings, profile, Kinds).id === "destroy") it.gear = Data.gearFor(name);
     it.verdict = Verdict.judge(it, settings, profile, Kinds);
+    if (it.verdict.id === "destroy" && it.gear === null) it.verdict = { id: "review", tag: "", reason: it.verdict.reason + " Checking whether it can be high alched first..." };
     if (name === "Coins") { it.price = 1; it.verdict = { id: "keep", tag: "", reason: "Money." }; }
     it.tier = tierOf(it.price);
     return it;
@@ -297,14 +301,14 @@
     rows = rows.filter(function (r) {
       if (filter === "all") return true;
       if (filter === "teach") return !!r.teach;
-      if (filter === "sell") return !!r.it && (r.it.verdict.id === "sell" || r.it.verdict.id === "destroy");
+      if (filter === "sell") return !!r.it && (r.it.verdict.id === "sell" || r.it.verdict.id === "alch" || r.it.verdict.id === "destroy");
       return !!r.it && r.price > 0;      /* valuable */
     });
     if (filter !== "all") rows.sort(function (a, b) { return b.price - a.price; });      /* "All" stays in bank order */
     var html = rows.map(function (r, i) {
       var img = slotImg(r.slot);
       if (r.teach) return '<div class="item" data-i="' + i + '"><div class="mini" style="background-image:url(' + img + ')"></div><div class="nm"><span class="chip ' + (r.slot.id.state === "unsure" ? "unsure" : "teach") + '">' + (r.slot.id.state === "unsure" ? "unsure" : "new") + "</span> " + (r.slot.id.state === "unsure" ? esc(r.slot.id.name) + "?" : "hover it in the bank") + "</div></div>";
-      return '<div class="item" data-i="' + i + '"><div class="mini" style="background-image:url(' + img + ')"></div><div class="nm">' + (r.it.verdict.id !== "keep" ? '<span class="chip ' + r.it.verdict.id + '">' + r.it.verdict.id + "</span> " : "") + esc(r.it.name) + (r.qty > 1 ? ' <span class="qty">x' + Verdict.short(r.qty) + "</span>" : "") + '</div><div class="tabn">tab ' + r.it.tab.number + '</div><div class="pr ' + r.it.tier.id + '" title="' + (r.it.price !== null ? Verdict.gp(r.it.price) + " each" : "") + '">' + (r.value !== null ? (r.approx ? "~" : "") + Verdict.short(r.value) : Verdict.short(r.it.price)) + "</div></div>";
+      return '<div class="item" data-i="' + i + '"><div class="mini" style="background-image:url(' + img + ')"></div><div class="nm">' + (r.it.verdict.id !== "keep" ? '<span class="chip ' + r.it.verdict.id + '">' + Verdict.LABEL[r.it.verdict.id] + "</span> " : "") + esc(r.it.name) + (r.qty > 1 ? ' <span class="qty">x' + Verdict.short(r.qty) + "</span>" : "") + '</div><div class="tabn">tab ' + r.it.tab.number + '</div><div class="pr ' + r.it.tier.id + '" title="' + (r.it.price !== null ? Verdict.gp(r.it.price) + " each" : "") + '">' + (r.value !== null ? (r.approx ? "~" : "") + Verdict.short(r.value) : Verdict.short(r.it.price)) + "</div></div>";
     }).join("");
     html = html || '<div class="empty">Nothing in this filter.</div>';
     if (html !== $("list")._html) { $("list").innerHTML = html; $("list")._html = html; }   /* untouched when nothing changed: keeps scroll and hover steady */
@@ -313,19 +317,19 @@
   function renderCard() {
     var s = shown && shown.slot, live = s && view && view.slots.indexOf(s) >= 0;
     if (s && !live && view) { var pk = posKey(s); s = null; view.slots.forEach(function (q) { if (posKey(q) === pk) s = q; }); if (s) shown.slot = s; }
-    if (!s) { $("hicon").style.backgroundImage = ""; $("hname").textContent = view ? "Hover an item" : "Open your bank"; $("hprice").innerHTML = "&nbsp;"; $("halch").innerHTML = "&nbsp;"; $("hblurb").innerHTML = "&nbsp;"; $("hquests").innerHTML = "&nbsp;"; $("hwiki").style.display = "none"; $("hverdict").innerHTML = view ? "Hover an item in the bank, or a row below, to see what it is worth, where it belongs and whether to keep it." : "&nbsp;"; $("htab").innerHTML = "&nbsp;"; $("hpins").style.display = settings.useOverrides ? "" : "none"; $("hpins").style.visibility = "hidden"; $("hfix").style.visibility = "hidden"; return; }
+    if (!s) { $("hicon").style.backgroundImage = ""; $("hname").textContent = view ? "Hover an item" : "Open your bank"; $("hprice").innerHTML = "&nbsp;"; $("halch").innerHTML = "&nbsp;"; $("hblurb").innerHTML = "&nbsp;"; $("hstats").innerHTML = "&nbsp;"; $("hquests").innerHTML = "&nbsp;"; $("hwiki").style.display = "none"; $("hverdict").innerHTML = view ? "Hover an item in the bank, or a row below, to see what it is worth, where it belongs and whether to keep it." : "&nbsp;"; $("htab").innerHTML = "&nbsp;"; $("hpins").style.display = settings.useOverrides ? "" : "none"; $("hpins").style.visibility = "hidden"; $("hfix").style.visibility = "hidden"; return; }
     $("hicon").style.backgroundImage = "url(" + slotImg(s) + ")";
     $("hfix").style.visibility = ""; $("hpins").style.display = settings.useOverrides ? "" : "none";
     if (!named(s)) {
       $("hname").style.color = "";
       $("hname").textContent = s.id.state === "unsure" ? s.id.name + "?" : "Unknown item";
       $("hprice").innerHTML = hoverSlot === s && settings.teach ? (tipName ? "reading: <b>" + esc(tipName) + "</b>" : "keep the mouse still until the game shows its name") : "&nbsp;";
-      $("halch").innerHTML = "&nbsp;"; $("hblurb").innerHTML = "&nbsp;"; $("hquests").innerHTML = "&nbsp;"; $("hwiki").style.display = "none";
+      $("halch").innerHTML = "&nbsp;"; $("hblurb").innerHTML = "&nbsp;"; $("hstats").innerHTML = "&nbsp;"; $("hquests").innerHTML = "&nbsp;"; $("hwiki").style.display = "none";
       $("hverdict").innerHTML = '<span class="chip ' + (s.id.state === "unsure" ? "unsure" : "teach") + '">' + (s.id.state === "unsure" ? "unsure" : "new") + "</span>" + (s.id.state === "unsure" ? "Looks like " + esc(s.id.name) + (s.id.rival ? " or " + esc(s.id.rival) : "") + ". Hover it in the bank to confirm." : (settings.teach ? "Hover it in the bank and I will remember it from then on." : "Teach is off. Tick teach at the top, then hover it, and I will remember it."));
       $("htab").innerHTML = "&nbsp;"; $("hpins").style.visibility = "hidden";
       return;
     }
-    var it = info(s.id.name);
+    var it = info(s.id.name, true);
     $("hname").textContent = it.name;
     $("hname").style.color = nameColours[it.name] ? "rgb(" + nameColours[it.name].join(",") + ")" : "";
     var sv = stackValue(s, it), st = s.stack;
@@ -336,6 +340,21 @@
     $("halch").innerHTML = it.alch ? "High alch <b>" + Verdict.gp(it.alch) + "</b>" + (many ? " &middot; stack <b>" + Verdict.short(it.alch * st.qty) + "</b>" : "") + (it.price !== null && it.alch > it.price ? " <span class='twin'>more than it sells for</span>" : "")
       : (it.tradeable === false ? "High alch: not known for untradeable items" : (it.alch === 0 ? "High alch: nothing" : "High alch: not loaded"));
     $("hblurb").textContent = it.blurb || "\u00a0"; $("hblurb").title = it.blurb || "";
+    /* what it is in game terms: where a teleport goes, what style a weapon or piece of armour is, its stats */
+    var facts = "";
+    if (it.kind === "teleport") { var to = Kinds.teleportsTo(it.name); facts = to ? "Teleports to: " + to : (it.tele || ""); }
+    else if (GEAR_KINDS[it.kind]) {
+      var g = it.gear;
+      if (g === null || g === undefined) facts = "Looking up its stats...";
+      else {
+        var bits = [], what = [g.cls, g.type && g.type !== g.cls ? g.type : "", g.slot].filter(Boolean).join(" ");
+        if (what) bits.push(what.charAt(0).toUpperCase() + what.slice(1));
+        if (g.tier) bits.push("tier " + g.tier);
+        for (var sk in (g.stats || {})) bits.push(sk + " " + g.stats[sk]);
+        facts = bits.join(" \u00b7 ");
+      }
+    }
+    $("hstats").textContent = facts || "\u00a0"; $("hstats").title = facts;
     $("hwiki").style.display = ""; $("hwiki").setAttribute("data-url", Data.wikiUrl(it.wikiTitle));
     var qhtml = "&nbsp;";
     if (it.questItem || it.kind === "quest" || it.kind === "keepsake") {
@@ -348,7 +367,7 @@
       }).join(", ") + (qs.length > 6 ? " and " + (qs.length - 6) + " more" : "");
     }
     if (qhtml !== $("hquests")._html) { $("hquests").innerHTML = qhtml; $("hquests")._html = qhtml; }
-    $("hverdict").innerHTML = '<span class="chip ' + it.verdict.id + '">' + it.verdict.id + "</span>" + (it.upgradeable ? '<span class="chip review">upgradeable</span>' : "") + esc(it.verdict.reason) +
+    $("hverdict").innerHTML = '<span class="chip ' + it.verdict.id + '">' + Verdict.LABEL[it.verdict.id] + "</span>" + (it.upgradeable ? '<span class="chip review">upgradeable</span>' : "") + esc(it.verdict.reason) +
       (s.id.state === "guess" ? " <span class='qty'>Recognised from the wiki's icon" + (s.id.alts && s.id.alts.length ? " (could also be " + esc(s.id.alts.join(", ")) + ")" : "") + "; hovering it in the bank settles it.</span>" : "") +
       (s.id.state === "twin" ? " <span class='twin'>Same icon as " + esc(s.id.twins.filter(function (n) { return n !== it.name; }).join(", ")) + " - showing the one you last hovered.</span>" : "");
     $("htab").innerHTML = "Belongs in <b>tab " + it.tab.number + " &middot; " + esc(it.tab.name) + "</b> <span title='" + esc(it.cats.slice(0, 12).join(", ")) + "'>(" + esc(Kinds.KIND_LABEL[it.kind]) + ")</span>";

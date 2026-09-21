@@ -8,7 +8,7 @@ An [Alt1 Toolkit](https://runeapps.org/alt1) app for RuneScape 3 that reads your
 
 It only reads the screen and draws markers. It never clicks, types or moves anything in the game.
 
-> **Status: v0.8.3.** Bank reading, item matching and tooltip reading are tested on real Alt1
+> **Status: v0.8.4.** Bank reading, item matching and tooltip reading are tested on real Alt1
 > captures (items match pixel-for-pixel between captures). The wiki lookups and the RuneMetrics
 > lookup have not worked live yet. See "Not proven yet" below.
 
@@ -30,8 +30,8 @@ The app needs the **pixel**, **overlay** and **game state** permissions (game st
 3. Known items lose their box and get:
    - a coloured bar along the top for what **one** of the item is worth: green 1k+, teal 10k+, blue 100k+, purple 1m+, gold 10m+;
    - the value of the whole stack in gold under the item (`950`, `12.3K`, `1.23M`, `2.5B`; the app reads the stack number);
-   - a letter in the top right corner when there is advice: **J** junk (sell or alch), **D** reclaimable from Diango (safe to destroy), **Q** quest item for a finished quest, **K** quest item to keep.
-4. Hover an item in the bank, or a row in the app, for the detail card: price, stack value, high alch value, a couple of sentences about the item from its wiki page, the verdict and its reason, the quests a quest item is needed for (each a link to the quest's wiki page), the tab it belongs in, and a link to the item's own wiki page. Links open in your normal browser.
+   - a letter in the top right corner when there is advice: **J** junk (sell, or high alch when it is not worth selling - nothing that can be alched is ever just destroyed), **D** reclaimable from Diango (yours to keep or destroy), **Q** quest item for a finished quest, **K** quest item to keep.
+4. Hover an item in the bank, or a row in the app, for the detail card: price, stack value, high alch value, a couple of sentences about the item from its wiki page, where a teleport item goes, the combat style, tier and stats of weapons and armour, the verdict and its reason, the quests a quest item is needed for (each a link to the quest's wiki page), the tab it belongs in, and a link to the item's own wiki page. Links open in your normal browser.
    The buttons over the list: **All** (bank order), **To teach**, **Sell** (everything the advice says to get rid of) and **Valuable** (everything with a price, dearest stack first). The card follows the mouse whether or not teach is on.
 5. The **teach** tick-box in the header switches learning from tooltips on and off. *Type the name yourself* on the card fixes a misread.
 6. A small amber corner means the item shares its exact icon with other items (a ring and its enchanted version, a necklace at different charges): the app shows whichever one you hovered last and lists the rest on the card.

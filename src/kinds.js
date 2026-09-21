@@ -129,9 +129,42 @@
     return { index: 0, number: 1, name: t.tabs[0][0] };
   }
 
+  /* where the well-known teleport items go (the same list the map overlays of the other apps use) */
+  var TELEPORTS = [
+    [/amulet of glory/i, "Edgeville, Karamja, Draynor Village, Al Kharid"],
+    [/ring of duelling/i, "Het's Oasis, Castle Wars, Warforge Dig Site, Fist of Guthix"],
+    [/games necklace/i, "Troll Invasion (Burthorpe), Barbarian Outpost, Gamers' Grotto, Corporeal Beast, Tears of Guthix, Agoroth"],
+    [/skills necklace/i, "Fishing, Mining, Crafting, Cooking, Invention and Runecrafting Guilds"],
+    [/combat bracelet/i, "Warriors' Guild, Champions' Guild, Edgeville Monastery, Ranging Guild"],
+    [/traveller's necklace/i, "Wizards' Tower, The Outpost, Deep Wilderness Dungeon"],
+    [/luck of the dwarves/i, "Grand Exchange, Miscellania, Keldagrim entrance"],
+    [/ring of wealth|ring of fortune/i, "Grand Exchange, Miscellania"],
+    [/digsite pendant/i, "Dig Site, Senntisten temple"],
+    [/ectophial/i, "Ectofuntus (Port Phasmatys)"],
+    [/tokkul-zo/i, "TzHaar City, Karamja volcano"],
+    [/drakan's medallion/i, "Barrows, Burgh de Rott, Meiyerditch, Darkmeyer"],
+    [/karamja gloves/i, "Karamja gem mine, Shilo Village"],
+    [/explorer's ring/i, "cabbage patch south of Falador"],
+    [/ardougne cloak/i, "Ardougne monastery"],
+    [/desert amulet/i, "Nardah"],
+    [/fremennik sea boots/i, "Rellekka"],
+    [/skull sceptre/i, "Barbarian Village"],
+    [/sixth-age circuit|memory strand/i, "Memorial to Guthix"],
+    [/archaeology journal/i, "Archaeology Guild"],
+    [/ring of kinship/i, "Daemonheim"],
+    [/pharaoh's sceptre/i, "the pyramids of Jalsavrah (Pyramid Plunder), Jaleustrophos (Agility Pyramid) and Jaldraocht"]
+  ];
+  /* -> where it goes, or "" when this list does not know */
+  function teleportsTo(name) {
+    var n = String(name || ""), i, m;
+    for (i = 0; i < TELEPORTS.length; i++) if (TELEPORTS[i][0].test(n)) return TELEPORTS[i][1];
+    m = /^(.+?) (teleport|tablet)$/i.exec(n);
+    return m ? m[1] : "";
+  }
+
   /* gear that is upgraded rather than replaced: never "below your tier" */
   var UPGRADEABLE = /deathwarden|deathdealer|death guard|skull lantern|first necromancer|masterwork|\(tier \d+\)|\+ ?\d$/i;
   function upgradeable(name) { return UPGRADEABLE.test(String(name || "")); }
 
-  return { upgradeable: upgradeable, kindOf: kindOf, tabFor: tabFor, template: template, TEMPLATES: TEMPLATES, KIND_LABEL: KIND_LABEL, SUPPLY: SUPPLY, TRAINS: TRAINS, RULES: RULES };
+  return { teleportsTo: teleportsTo, upgradeable: upgradeable, kindOf: kindOf, tabFor: tabFor, template: template, TEMPLATES: TEMPLATES, KIND_LABEL: KIND_LABEL, SUPPLY: SUPPLY, TRAINS: TRAINS, RULES: RULES };
 });

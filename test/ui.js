@@ -39,7 +39,7 @@ const { spawn } = require('child_process'); const path = require('path'), fs = r
     const titles = decodeURIComponent((url.match(/titles=([^&]*)/) || [])[1] || '').split('|'); const pages = {}; let i = 1;
     if (/prop=links/.test(url)) { titles.forEach(t => { pages[i++] = { title: t, links: /excalibur/i.test(t) ? [{ title: 'Holy Grail' }, { title: 'Sword' }] : [] }; }); return r.fulfill({ json: { query: { pages } }, headers: cors }); }
     if (/rvprop=content/.test(url) && !/^Module:GE/.test(titles[0])) {   // item pages as wikitext: the combat-stats box
-      titles.forEach(t => { pages[i++] = { title: t, revisions: [{ slots: { main: { '*': /rune scimitar/i.test(t) ? "{{Infobox Bonuses\n|class = melee\n|slot = main hand weapon\n|tier = 50\n}}" : /noxious/i.test(t) ? "{{Infobox Bonuses\n|class=melee\n|slot=2h\n|tier=90}}" : 'no stats here' } } }] }; });
+      titles.forEach(t => { pages[i++] = { title: t, revisions: [{ slots: { main: { '*': /rune scimitar/i.test(t) ? "{{Infobox Bonuses\n|class = melee\n|slot = main hand weapon\n|tier = 50\n}}" : /noxious/i.test(t) ? "{{Infobox Bonuses\n|class=melee\n|slot=2h\n|tier=90\n|damage=1500\n}}" : /commorb/i.test(t) ? "{{Infobox Item\n|value = 100\n|alchable = yes\n}}" : 'no stats here' } } }] }; });
       return r.fulfill({ json: { query: { pages } }, headers: cors });
     }
     if (/^Module:GE/.test(titles[0])) {   // the wiki's own price / alch / value tables
@@ -96,7 +96,7 @@ const { spawn } = require('child_process'); const path = require('path'), fs = r
   const names = await page.evaluate(() => Bankwise._lib().names());
   ok('learns items from the tooltip: ' + names.join(', '), names.length === 3 && names.includes('Magic logs') && names.includes('Santa hat'), JSON.stringify(names));
   const list = await page.$$eval('#list .item .nm', els => els.map(e => e.textContent.trim()).filter(t => !/hover it/.test(t)));
-  ok('known items listed with advice: ' + list.join(' | '), list.some(t => /destroy\s+Santa hat/.test(t)) && list.some(t => /Magic logs/.test(t)), list.join('|'));
+  ok('known items listed with advice: ' + list.join(' | '), list.some(t => /Diango\s+Santa hat/.test(t)) && list.some(t => /Magic logs/.test(t)), list.join('|'));
   ov = await page.evaluate(() => window.__ov.slice(-400));
   ok('overlay tags the Diango item with D and the quest item with K', ov.some(o => o[0] === 'text' && o[1] === 'D') && ov.some(o => o[0] === 'text' && o[1] === 'K'), JSON.stringify(ov.filter(o => o[0] === 'text').slice(-5)));
   await page.hover('#list .item:has-text("Magic logs")');
@@ -157,7 +157,7 @@ const { spawn } = require('child_process'); const path = require('path'), fs = r
   await page.click('#filters button[data-f="sell"]');
   const sellL = await page.$$eval('#list .item .nm', els => els.map(e => e.textContent.trim()));
   await page.click('#filters button[data-f="all"]');
-  ok('list buttons are ' + btns.join(' / ') + '; Valuable = priced items, dearest first: ' + val.join(' | '), btns.join('|') === 'All|To teach|Sell|Valuable' && /Noxious scythe/.test(val[0]) && /Rune scimitar/.test(val[1]) && val.length === 3 && sellL.some(t => /Santa hat/.test(t)), JSON.stringify({ btns, val, sellL }));
+  ok('list buttons are ' + btns.join(' / ') + '; Valuable = priced items, dearest first: ' + val.join(' | '), btns.join('|') === 'All|To teach|Sell|Valuable' && /Noxious scythe/.test(val[0]) && /Rune scimitar/.test(val[1]) && val.length === 3 && !sellL.some(t => /Santa hat/.test(t)), JSON.stringify({ btns, val, sellL }));
 
   // personal options are off by default, and work when switched on
   await page.click('#opensettings');
@@ -169,13 +169,14 @@ const { spawn } = require('child_process'); const path = require('path'), fs = r
   await page.screenshot({ path: path.join(__dirname, '../docs/ui-settings.png') });
   await page.click('#closesettings'); await page.waitForTimeout(900);
   await page.hover('#list .item:has-text("Commorb")');
-  let c2 = await page.textContent('#hverdict'); ok('quest log on: finished quest -> item can go', /While Guthix Sleeps, which you have finished/.test(c2), c2);
+  await page.waitForTimeout(1500); await page.hover('#list .item:has-text("Magic logs")'); await page.hover('#list .item:has-text("Commorb")');
+  let c2 = await page.textContent('#hverdict'); ok('quest log on: finished quest -> item can go, and it is high alched rather than destroyed', /^high alch/.test(c2) && /While Guthix Sleeps, which you have finished/.test(c2) && /High alch it for 60/.test(c2), c2);
   await page.hover('#list .item:has-text("Magic logs")');
   c2 = await page.textContent('#hover'); ok('skill levels on: logs at 99 Firemaking/Fletching -> sell; granular template -> tab 9', /already at your goal of 99/.test(c2) && /tab 9/.test(c2), c2.replace(/\s+/g, ' '));
   await page.hover('#list .item:has-text("Rune scimitar")'); await page.waitForTimeout(1500); await page.hover('#list .item:has-text("Rune scimitar")');
   c2 = await page.textContent('#hverdict'); ok('skill levels on: tier 50 weapon with 72 Attack -> sell', /^sell/.test(c2) && /Tier 50 melee weapon/.test(c2) && /Attack level of 72 lets you use tier 70/.test(c2), c2);
   await page.hover('#list .item:has-text("Noxious scythe")'); await page.waitForTimeout(1200); await page.hover('#list .item:has-text("Noxious scythe")');
-  c2 = await page.textContent('#hverdict'); ok('a tier 90 weapon is kept', /^keep/.test(c2), c2);
+  c2 = await page.textContent('#hverdict'); const st2 = await page.textContent('#hstats'); ok('a tier 90 weapon is kept, and the card gives its style and stats: ' + st2.trim(), /^keep/.test(c2) && /Melee 2h/.test(st2) && /tier 90/.test(st2) && /damage 1500/.test(st2), c2 + ' | ' + st2);
   await page.hover('#list .item:has-text("Deathwarden hood")');
   c2 = await page.textContent('#hverdict'); ok('Deathwarden gear is always keep and the card says upgradeable', /^keep\s*upgradeable/.test(c2) && /upgraded rather than replaced/.test(c2), c2);
   await page.hover('#list .item:has-text("Magic logs")');

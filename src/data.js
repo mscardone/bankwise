@@ -120,7 +120,7 @@
     var urls = [["wiki price + alch tables", bulkUrl()], ["price dump", PRICE_URL], ["price, one item", PRICE_ONE + encodeURIComponent("Magic logs|Santa hat")],
       ["quest list (first 5)", WIKI_API + "?action=query&format=json&origin=*&list=categorymembers&cmtitle=Category:Quests&cmnamespace=0&cmlimit=5"],
       ["gear tier, from the text of Rune platebody", WIKI_API + "?action=query&format=json&origin=*&redirects=1&prop=revisions&rvprop=content&rvslots=main&titles=Rune%20platebody"],
-      ["wiki categories + opening sentences", WIKI_API + "?action=query&format=json&origin=*&redirects=1&prop=categories%7Cextracts&cllimit=max&clshow=!hidden&exintro=1&explaintext=1&exsentences=2&exlimit=max&titles=" + encodeURIComponent("Magic logs|Santa hat|Commorb")]];
+      ["wiki categories + opening sentences", WIKI_API + "?action=query&format=json&origin=*&redirects=1&prop=categories%7Cextracts&cllimit=max&clshow=!hidden&exintro=1&explaintext=1&exsentences=6&exlimit=max&titles=" + encodeURIComponent("Magic logs|Santa hat|Commorb")]];
     return Promise.all(urls.map(function (u) {
       return fetch(u[1]).then(function (r) { return r.text().then(function (t) {
         if (u[0] === "wiki price + alch tables") {
@@ -130,7 +130,7 @@
             return u[0] + ": HTTP " + r.status + ", " + t.length + " chars\n" + rows.join("\n");
           } catch (e) { /* fall through to the raw text */ }
         }
-        if (/^gear tier/.test(u[0])) { var bits = (t.match(/\|\s*(tier|class|slot)\d*\s*=[^|\\]{0,30}/gi) || []).slice(0, 6); return u[0] + ": HTTP " + r.status + ", " + t.length + " chars\n    read as " + JSON.stringify(parseGear(t.replace(/\\n/g, "\n"))) + "   lines found: " + bits.join("  "); }
+        if (/^gear tier/.test(u[0])) { var raw = t.replace(/\\n/g, "\n"), bx = raw.search(/\{\{\s*Infobox[ _]Bonuses/i); return u[0] + ": HTTP " + r.status + ", " + t.length + " chars\n    read as " + JSON.stringify(parseGear(raw)) + "\n    the box as the wiki has it: " + (bx >= 0 ? raw.slice(bx, bx + 700).replace(/\s+/g, " ") : "NO Infobox Bonuses FOUND"); }
         return u[0] + ": HTTP " + r.status + ", " + t.length + " chars\n    " + t.slice(0, /^wiki categories/.test(u[0]) ? 2200 : 400).replace(/\s+/g, " "); }); })
         .catch(function (e) { return u[0] + ": FAILED - " + e.message + "\n    " + u[1]; });
     }));
@@ -165,7 +165,7 @@
   function saveFacts() { store.set("bankwise.facts.v1", JSON.stringify(facts)); }
   function factsFor(name) {
     var k = key(name), f = facts[k];
-    if (f && Date.now() - f.at < 30 * DAY && f.blurb !== undefined) return f;      /* no blurb field = cached before 0.8.2: ask again once */
+    if (f && Date.now() - f.at < 30 * DAY && f.blurb !== undefined && f.tele !== undefined) return f;      /* fields missing = cached by an older version: ask again once */
     if (!pending[k] && name) { pending[k] = 1; queue.push(name); if (!timer) timer = setTimeout(flush, 400); }
     return f || null;
   }
@@ -174,9 +174,9 @@
     var batch = queue.splice(0, 20);      /* 20 = as many opening paragraphs as the wiki hands out per request */
     if (!batch.length) return;
     status.facts = "asking the wiki about " + batch.length + " item" + (batch.length === 1 ? "" : "s");
-    var url = WIKI_API + "?action=query&format=json&origin=*&redirects=1&prop=categories%7Cextracts&cllimit=max&clshow=!hidden&exintro=1&explaintext=1&exsentences=2&exlimit=max&titles=" + encodeURIComponent(batch.join("|"));
+    var url = WIKI_API + "?action=query&format=json&origin=*&redirects=1&prop=categories%7Cextracts&cllimit=max&clshow=!hidden&exintro=1&explaintext=1&exsentences=6&exlimit=max&titles=" + encodeURIComponent(batch.join("|"));
     fetch(url).then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); }).then(function (j) { return collect(j, url, batch, 0); }).then(function () {
-      batch.forEach(function (n) { var k = key(n); delete pending[k]; if (!facts[k]) facts[k] = { at: Date.now(), cats: [], missing: true }; if (facts[k].blurb === undefined) facts[k].blurb = ""; });
+      batch.forEach(function (n) { var k = key(n); delete pending[k]; if (!facts[k]) facts[k] = { at: Date.now(), cats: [], missing: true }; if (facts[k].blurb === undefined) facts[k].blurb = ""; if (facts[k].tele === undefined) facts[k].tele = ""; });
       saveFacts(); status.facts = Object.keys(facts).length + " items known"; changed();
       if (queue.length) timer = setTimeout(flush, 1200);
     }).catch(function (e) {
@@ -192,7 +192,7 @@
       while (back[from] && guard++ < 4) from = back[from];
       var old = facts[key(from)], k = key(from), f = old && old.fresh ? old : (facts[k] = { at: Date.now(), cats: [], fresh: 1, quests: old && old.quests, gear: old && old.gear });
       f.title = pg.title; f.missing = pg.missing !== undefined;
-      if (typeof pg.extract === "string" && pg.extract) f.blurb = tidyBlurb(pg.extract);
+      if (typeof pg.extract === "string" && pg.extract) { f.blurb = tidyBlurb(pg.extract); f.tele = teleSentence(pg.extract, f.blurb); }
       (pg.categories || []).forEach(function (c) { var t = String(c.title).replace(/^Category:/, ""); if (f.cats.indexOf(t) < 0) f.cats.push(t); });
     }
     if (j && j["continue"] && depth < 4) {
@@ -247,14 +247,32 @@
   /* ---------- gear tier (for "you have outgrown this") ---------- */
   /* read from the item page's own text: the combat-stats box carries tier, class and slot */
   var gearQueue = [], gearPending = {}, gearTimer = null;
-  function parseGear(text) {
-    var t = /\|\s*tier\d*\s*=\s*(\d+)/i.exec(text || ""), c = /\|\s*class\d*\s*=\s*([A-Za-z]+)/i.exec(text || ""), s = /\|\s*slot\d*\s*=\s*([A-Za-z0-9 -]+)/i.exec(text || "");
-    return t ? { tier: +t[1], cls: c ? c[1].toLowerCase() : "", slot: s ? s[1].trim().toLowerCase() : "" } : { tier: 0 };
+  /* what the item page's own text says: the combat-stats box (tier, class, slot, type and whatever stats it lists)
+     and, from the item box, the shop value and whether it can be alched */
+  var STAT_KEYS = [["damage", "damage"], ["accuracy", "accuracy"], ["style", "style"], ["speed", "speed"], ["attack_range", "range"], ["armour", "armour"], ["life", "life points"], ["prayer", "prayer"],
+    ["strength", "strength"], ["ranged", "ranged"], ["magic", "magic"], ["necromancy", "necromancy"], ["requirements", "needs"]];
+  function field(text, name) {
+    var m = new RegExp("\\|\\s*" + name + "\\d*\\s*=[ \\t]*([^\\n|}]*)", "i").exec(text || "");
+    return m ? m[1].replace(/\[\[(?:[^\]|]*\|)?([^\]]*)\]\]/g, "$1").replace(/\{\{[^}]*\}\}/g, "").replace(/<[^>]+>/g, "").trim() : "";
   }
-  /* -> {tier, cls, slot} (tier 0 = the page gives none), or null while it is being fetched */
+  function parseGear(text) {
+    text = String(text || "");
+    var at = text.search(/\{\{\s*Infobox[ _]Bonuses/i), box = at >= 0 ? text.slice(at, at + 2500) : "", out = { v: 2, tier: 0, stats: {} };
+    if (box) {
+      var end = box.search(/\n\}\}/); if (end > 0) box = box.slice(0, end);
+      out.tier = +(field(box, "tier").match(/\d+/) || [0])[0];
+      out.cls = field(box, "class").toLowerCase(); out.slot = field(box, "slot").toLowerCase(); out.type = field(box, "type").toLowerCase();
+      STAT_KEYS.forEach(function (k) { var v = field(box, k[0]); if (v && !/^(0|0\.0|no|none|n\/a|-)$/i.test(v)) out.stats[k[1]] = v.slice(0, 40); });
+    }
+    var val = field(text, "value").replace(/,/g, ""), alchable = field(text, "alchable").toLowerCase();
+    if (/^\d+$/.test(val)) out.value = +val;
+    out.alchable = alchable ? !/^(no|false|0)$/.test(alchable) : null;
+    return out;
+  }
+  /* -> the object above (tier 0 = the page gives none), or null while it is being fetched */
   function gearFor(name) {
     var k = key(name), f = facts[k];
-    if (f && f.gear) return f.gear;
+    if (f && f.gear && f.gear.v === 2) return f.gear;
     if (!f || f.missing) { if (!f) factsFor(name); return null; }
     if (!gearPending[k]) { gearPending[k] = 1; gearQueue.push(name); if (!gearTimer) gearTimer = setTimeout(flushGear, 600); }
     return null;
@@ -272,7 +290,7 @@
         var text = rev && (rev.slots && rev.slots.main ? (rev.slots.main["*"] !== undefined ? rev.slots.main["*"] : rev.slots.main.content) : rev["*"]);
         if (facts[key(from)]) facts[key(from)].gear = parseGear(text);
       }
-      batch.forEach(function (n) { var k = key(n); delete gearPending[k]; if (facts[k] && !facts[k].gear) facts[k].gear = { tier: 0 }; });
+      batch.forEach(function (n) { var k = key(n); delete gearPending[k]; if (facts[k] && !(facts[k].gear && facts[k].gear.v === 2)) facts[k].gear = { v: 2, tier: 0, stats: {} }; });
       saveFacts(); changed();
       if (gearQueue.length) gearTimer = setTimeout(flushGear, 1200);
     }).catch(function (e) { batch.forEach(function (n) { delete gearPending[key(n)]; }); status.lastError = "gear tiers: " + e.message; });
@@ -285,6 +303,12 @@
     var cut = t.slice(0, 260), stop = Math.max(cut.lastIndexOf(". "), cut.lastIndexOf("! "));
     return stop > 80 ? cut.slice(0, stop + 1) : cut.replace(/\s+\S*$/, "") + "...";
   }
+  /* the sentence of the opening paragraph that says where a thing teleports to, when the blurb does not already */
+  function teleSentence(extract, blurb) {
+    var parts = String(extract || "").replace(/\s+/g, " ").match(/[^.!?]+[.!?]+(?=\s|$)/g) || [], i;      /* no lookbehind: Alt1's browser may be too old for it */
+    for (i = 0; i < parts.length; i++) if (/teleport/i.test(parts[i]) && String(blurb || "").indexOf(parts[i].trim().slice(0, 40)) < 0) return parts[i].trim().slice(0, 220);
+    return "";
+  }
   function has(f, re) { return !!(f && f.cats && f.cats.some(function (c) { return re.test(c); })); }
 
   /* -> what the rest of the app needs to know about an item */
@@ -296,7 +320,7 @@
       known: !!(f && !f.missing), cats: f ? f.cats : [],
       diango: has(f, /diango/i),
       questItem: has(f, /^quest items?$/i) || has(f, /quest items/i),
-      blurb: f && f.blurb || "",
+      blurb: f && f.blurb || "", tele: f && f.tele || "",
       wikiTitle: f && f.title || name
     };
   }

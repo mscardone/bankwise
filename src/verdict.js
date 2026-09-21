@@ -60,16 +60,32 @@
 
   /* item = Data.describe() + {kind};  opts = {junkBelow, useQuests, useSkills, goalLevel, useOverrides, overrides};
      profile = {quests:{normalised title:{title,status}}, levels:[by skill id]} or null
-     -> {id: keep|sell|destroy|review, tag, reason} */
+     -> {id: keep|sell|alch|destroy|diango|review, tag, reason}
+     Nothing is simply destroyed when it can be high-alched: the coins and the Magic XP beat nothing at all. */
   function judge(item, opts, profile, Kinds) {
+    var v = decide(item, opts, profile, Kinds), alch = alchOf(item);
+    if (v.id === "destroy" && alch > 0) {
+      var magic = profile && profile.levels ? (profile.levels[6] || 1) : null;
+      return { id: "alch", tag: v.tag || "J", reason: v.reason + " High alch it for " + gp(alch) + " rather than destroying it: coins and Magic XP instead of nothing." + (magic !== null && magic < 55 ? " (High Level Alchemy needs 55 Magic; you have " + magic + ".)" : "") };
+    }
+    return v;
+  }
+  /* high alch value: the Grand Exchange table for tradeables, else 60% of the shop value on the item's wiki page */
+  function alchOf(item) {
+    if (item.alch) return item.alch;
+    var g = item.gear;
+    return g && g.alchable !== false && g.value ? Math.floor(g.value * 0.6) : 0;
+  }
+  function decide(item, opts, profile, Kinds) {
     opts = opts || {};
     var pin = opts.useOverrides && opts.overrides && opts.overrides[norm(item.name)];
     if (pin === "keep") return { id: "keep", tag: "", reason: "You pinned this as always keep." };
     if (pin === "junk") return { id: item.tradeable ? "sell" : "destroy", tag: "J", reason: "You pinned this as junk." };
 
-    if (item.diango) return { id: "destroy", tag: "D", reason: "Reclaimable from Diango, so it is safe to destroy - he hands it back for free." };
+    if (item.diango) return { id: "diango", tag: "D", reason: "Reclaimable from Diango: keep it or destroy it as you like - he hands it back for free." };
 
-    if (item.questItem || item.kind === "quest") {
+    /* only things whose whole point is the quest: a teleport, rune or potion that a quest also uses keeps its own kind */
+    if (item.kind === "quest") {
       var q = opts.useQuests ? questOf(item, profile) : null;
       if (q && q.status === "COMPLETED") return { id: "destroy", tag: "Q", reason: "Quest item for " + q.title + ", which you have finished. Check the wiki page for a post-quest use before dropping it." };
       if (q) return { id: "keep", tag: "K", reason: "Needed for " + q.title + " (" + (q.status === "STARTED" ? "in progress" : "not started") + ")." };
@@ -96,12 +112,13 @@
     if (item.tradeable) {
       var cut = opts.junkBelow === undefined ? 500 : opts.junkBelow;
       if (!supply && item.price !== null && item.price < cut && ["weapon", "armour", "jewellery", "misc", "tools"].indexOf(item.kind) >= 0)
-        return { id: "sell", tag: "J", reason: "Tradeable, worth " + gp(item.price) + " each, and not a consumable: " + (item.alch ? (item.alch > item.price ? "high alch it for " + gp(item.alch) + ", which beats selling." : "sell it, or alch it for " + gp(item.alch) + ".") : "sell it.") };
+        return item.alch ? { id: "alch", tag: "J", reason: "Only worth " + gp(item.price) + " on the Grand Exchange and not a consumable: high alch it for " + gp(item.alch) + (item.alch > item.price ? ", which also beats selling." : " and the Magic XP rather than bothering to sell.") }
+          : { id: "sell", tag: "J", reason: "Tradeable, worth " + gp(item.price) + " each, and not a consumable: sell it." };
       return { id: "keep", tag: "", reason: supply ? "Consumable supply - keep while you use it, sell when you stop." : "Tradeable, " + gp(item.price) + " each." };
     }
     if (!item.known) return { id: "review", tag: "", reason: "Not tradeable and the wiki has no page under this exact name." };
     return { id: "review", tag: "", reason: "Untradeable and not reclaimable - check the wiki before destroying it." };
   }
 
-  return { judge: judge, tier: tier, short: short, gp: gp, norm: norm, SKILLS: SKILLS, TIERS: TIERS };
+  return { judge: judge, alchOf: alchOf, LABEL: { keep: "keep", sell: "sell", alch: "high alch", destroy: "destroy", diango: "Diango", review: "review" }, tier: tier, short: short, gp: gp, norm: norm, SKILLS: SKILLS, TIERS: TIERS };
 });
