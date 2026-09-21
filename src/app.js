@@ -2,7 +2,7 @@
    draws value/verdict markers over the game and explains each verdict. */
 (function () {
   "use strict";
-  var VERSION = "0.8.6";
+  var VERSION = "0.8.7";
   var READ_MS = 700, HOVER_MS = 250, OVERLAY_MS = 2500, OVERLAY_GROUP = "bankwise";
   function $(id) { return document.getElementById(id); }
   var store = {
@@ -401,7 +401,9 @@
     $("hblurb").textContent = it.blurb || "\u00a0"; $("hblurb").title = it.blurb || "";
     /* what it is in game terms: where a teleport goes, what style a weapon or piece of armour is, its stats */
     var facts = "";
-    if (it.kind === "teleport") { var to = Kinds.teleportsTo(it.name); facts = to ? "Teleports to: " + to : (it.tele || ""); }
+    if (it.kind === "teleport") { var to = Kinds.teleportsTo(it.name); 
+      /* the wiki's own sentence only when it is a whole sentence and the five lines above do not already say where it goes */
+      facts = to ? "Teleports to: " + to : (it.tele && /^[A-Z]/.test(it.tele) && /[.!?]$/.test(it.tele) && !/teleport/i.test(String(it.blurb || "").slice(0, 320)) ? it.tele : ""); }
     else if (GEAR_KINDS[it.kind]) {
       var g = it.gear;
       if (g === null || g === undefined) facts = "Looking up its stats...";

@@ -165,7 +165,7 @@
   function saveFacts() { store.set("bankwise.facts.v1", JSON.stringify(facts)); }
   function factsFor(name) {
     var k = key(name), f = facts[k];
-    if (f && Date.now() - f.at < 30 * DAY && f.blurb !== undefined && f.tele !== undefined && f.bv === 2) return f;      /* fields missing = cached by an older version: ask again once */
+    if (f && Date.now() - f.at < 30 * DAY && f.blurb !== undefined && f.tele !== undefined && f.bv === 2 && !(isDisambig(f) && !f.dis)) return f;      /* fields missing = cached by an older version: ask again once */
     if (!pending[k] && name) { pending[k] = 1; queue.push(name); if (!timer) timer = setTimeout(flush, 400); }
     return f || null;
   }
@@ -177,6 +177,7 @@
     var url = WIKI_API + "?action=query&format=json&origin=*&redirects=1&prop=categories%7Cextracts&cllimit=max&clshow=!hidden&exintro=1&explaintext=1&exlimit=max&titles=" + encodeURIComponent(batch.join("|"));
     fetch(url).then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); }).then(function (j) { return collect(j, url, batch, 0); }).then(function () {
       batch.forEach(function (n) { var k = key(n); delete pending[k]; if (!facts[k]) facts[k] = { at: Date.now(), cats: [], missing: true }; if (facts[k].blurb === undefined) facts[k].blurb = ""; facts[k].bv = 2; if (facts[k].tele === undefined) facts[k].tele = ""; });
+      batch.forEach(function (n) { var f = facts[key(n)]; if (f && !f.missing && isDisambig(f) && !f.dis) { f.dis = 1; resolveDisambig(n, f); } });
       saveFacts(); status.facts = Object.keys(facts).length + " items known"; changed();
       if (queue.length) timer = setTimeout(flush, 1200);
     }).catch(function (e) {
@@ -303,6 +304,30 @@
     }).catch(function (e) { batch.forEach(function (n) { delete gearPending[key(n)]; }); status.lastError = "gear tiers: " + e.message; });
   }
 
+  /* A name that lands on a "X may refer to:" page: take the first page that list offers, and describe that instead. */
+  function isDisambig(f) { return !!f && (has(f, /disambig/i) || /\bmay (also )?refer to\b/i.test(String(f.blurb || "").slice(0, 160))); }
+  function resolveDisambig(name, f) {
+    var page = f.title || name;
+    fetch(WIKI_API + "?action=query&format=json&origin=*&redirects=1&prop=revisions&rvprop=content&rvslots=main&titles=" + encodeURIComponent(page)).then(function (r) { return r.json(); }).then(function (j) {
+      var pages = j && j.query && j.query.pages || {}, text = "", id;
+      for (id in pages) { var rev = pages[id].revisions && pages[id].revisions[0]; text = rev && (rev.slots && rev.slots.main ? (rev.slots.main["*"] !== undefined ? rev.slots.main["*"] : rev.slots.main.content) : rev["*"]) || text; }
+      var m = /^\*+[^\[\n]*\[\[([^\]|#]+)/m.exec(text || "");      /* the first bullet's first link, in page order */
+      if (!m) return;
+      var target = m[1].trim();
+      return fetch(WIKI_API + "?action=query&format=json&origin=*&redirects=1&prop=categories%7Cextracts&cllimit=max&clshow=!hidden&exintro=1&explaintext=1&titles=" + encodeURIComponent(target)).then(function (r) { return r.json(); }).then(function (j2) {
+        var ps = j2 && j2.query && j2.query.pages || {}, pid;
+        for (pid in ps) {
+          var pg = ps[pid];
+          if (pg.missing !== undefined) continue;
+          var g = facts[key(name)] = { at: Date.now(), cats: [], title: pg.title, missing: false, dis: 1, from: page, bv: 2, blurb: "", tele: "" };
+          (pg.categories || []).forEach(function (c) { g.cats.push(String(c.title).replace(/^Category:/, "")); });
+          if (pg.extract) { g.blurb = tidyBlurb(pg.extract); g.tele = teleSentence(pg.extract, g.blurb); }
+        }
+        saveFacts(); changed();
+      });
+    }).catch(function () { /* the disambiguation text stays; it is tried again next time */ delete f.dis; });
+  }
+
   /* the opening of the wiki page */
   function tidyBlurb(t) {
     /* everything the page says before its table of contents; the card shows five lines of it and ends in an ellipsis.
@@ -336,7 +361,7 @@
 
   loadFacts();
   return {
-    questsFor: questsFor, gearFor: gearFor, _parseGear: parseGear, wikiUrl: function (title) { return "https://runescape.wiki/w/" + encodeURIComponent(String(title || "").replace(/ /g, "_")).replace(/%2F/g, "/").replace(/%3A/g, ":"); },
+    questsFor: questsFor, gearFor: gearFor, _parseGear: parseGear, wikiUrl: function (title) { return "https://runescape.wiki/w/" + encodeURIComponent(String(title || "").replace(/ /g, "_")).replace(/%2F/g, "/").replace(/%3A/g, ":").replace(/%2C/g, ","); },
     loadPrices: loadPrices, selfTest: selfTest, resolveName: resolveName, _variants: variants, price: price, pricesLoaded: pricesLoaded, factsFor: factsFor, describe: describe, status: status,
     onChange: function (f) { listeners.push(f); }, key: key,
     clearCache: function () { facts = {}; saveFacts(); prices = null; pricesAt = 0; store.set("bankwise.prices.v1", "null"); },

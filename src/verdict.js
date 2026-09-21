@@ -96,6 +96,7 @@
     if (item.upgradeable) return { id: "keep", tag: "", reason: "Upgradeable gear: it is upgraded rather than replaced, so keep it." };
 
     if (item.tradeable === null) return { id: "review", tag: "", reason: "Prices have not loaded, so there is no advice yet." };
+    if (item.kind === "teleport" && !item.tradeable) return { id: "keep", tag: "", reason: "A teleport you cannot buy back on the Grand Exchange - keep it." };
 
     /* gear you have outgrown: tier below the tier your level lets you wear (level 72 -> tier 70) */
     if (opts.useSkills && profile && profile.levels && item.tradeable && item.gear && item.gear.tier && (item.kind === "weapon" || item.kind === "armour")) {

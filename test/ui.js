@@ -39,7 +39,7 @@ const { spawn } = require('child_process'); const path = require('path'), fs = r
     const titles = decodeURIComponent((url.match(/titles=([^&]*)/) || [])[1] || '').split('|'); const pages = {}; let i = 1;
     if (/prop=links/.test(url)) { titles.forEach(t => { pages[i++] = { title: t, links: /excalibur/i.test(t) ? [{ title: 'Holy Grail' }, { title: 'Sword' }] : [] }; }); return r.fulfill({ json: { query: { pages } }, headers: cors }); }
     if (/rvprop=content/.test(url) && !/^Module:GE/.test(titles[0])) {   // item pages as wikitext: the combat-stats box
-      titles.forEach(t => { pages[i++] = { title: t, revisions: [{ slots: { main: { '*': /rune scimitar/i.test(t) ? "{{Infobox Bonuses\n|class = melee\n|slot = main hand weapon\n|tier = 50\n}}" : /noxious/i.test(t) ? "{{Infobox Bonuses\n|class=melee\n|slot=2h\n|tier=90\n|damage=1500\n}}" : /commorb/i.test(t) ? "{{Infobox Item\n|value = 100\n|alchable = yes\n}}" : 'no stats here' } } }] }; });
+      titles.forEach(t => { pages[i++] = { title: t, revisions: [{ slots: { main: { '*': /^mask of sliske$/i.test(t) ? "'''Mask of Sliske''' may refer to:\n* The [[Mask of Sliske, Light]], a reward\n* [[Mask of Sliske, Shadow]]\n{{Disambig}}" : /rune scimitar/i.test(t) ? "{{Infobox Bonuses\n|class = melee\n|slot = main hand weapon\n|tier = 50\n}}" : /noxious/i.test(t) ? "{{Infobox Bonuses\n|class=melee\n|slot=2h\n|tier=90\n|damage=1500\n}}" : /commorb/i.test(t) ? "{{Infobox Item\n|value = 100\n|alchable = yes\n}}" : 'no stats here' } } }] }; });
       return r.fulfill({ json: { query: { pages } }, headers: cors });
     }
     if (/^Module:GE/.test(titles[0])) {   // the wiki's own price / alch / value tables
@@ -48,7 +48,7 @@ const { spawn } = require('child_process'); const path = require('path'), fs = r
       titles.forEach(t => { pages[i++] = { title: t, revisions: [{ slots: { main: { '*': JSON.stringify(tables[t] || {}) } } }] }; });
       return r.fulfill({ json: { query: { pages } }, headers: { 'access-control-allow-origin': '*' } });
     }
-    titles.forEach(t => { if (/boits/i.test(t)) { pages[i++] = { title: t, missing: '' }; return; } const cats = /santa/i.test(t) ? ['Reclaimable from Diango', 'Holiday items'] : /commorb/i.test(t) ? ['Quest items', 'While Guthix Sleeps'] : /excalibur/i.test(t) ? ['Quest rewards', 'Items'] : /logs/i.test(t) ? ['Logs', 'Firemaking'] : ['Items']; pages[i++] = { title: t, categories: cats.map(c => ({ title: 'Category:' + c })), extract: t + ' is an item in the pretend wiki. It is used for testing the detail card. ' + 'This opening paragraph goes on for a good while so that it cannot fit. '.repeat(8) + 'Last sentence of the intro.' }; });
+    titles.forEach(t => { if (/boits/i.test(t)) { pages[i++] = { title: t, missing: '' }; return; } const cats = /santa/i.test(t) ? ['Reclaimable from Diango', 'Holiday items'] : /commorb/i.test(t) ? ['Quest items', 'While Guthix Sleeps'] : /excalibur/i.test(t) ? ['Quest rewards', 'Items'] : /logs/i.test(t) ? ['Logs', 'Firemaking'] : ['Items']; pages[i++] = { title: t, categories: cats.map(c => ({ title: 'Category:' + c })), extract: /^mask of sliske$/i.test(t) ? 'Mask of Sliske may refer to:' : t + ' is an item in the pretend wiki. It is used for testing the detail card. ' + 'This opening paragraph goes on for a good while so that it cannot fit. '.repeat(8) + 'Last sentence of the intro.' }; });
     r.fulfill({ json: { query: { pages } }, headers: { 'access-control-allow-origin': '*' } });
   });
   // the Cloudflare Worker: this player's RuneMetrics profile is private, so levels come from the hiscores table
@@ -153,6 +153,10 @@ const { spawn } = require('child_process'); const path = require('path'), fs = r
   await page.hover('#list .item:has-text("Excalibur")'); await page.waitForTimeout(1500); await page.hover('#list .item:has-text("Excalibur")');
   cq = await page.evaluate(() => ({ v: document.getElementById('hverdict').textContent, tab: document.getElementById('htab').textContent, quests: document.getElementById('hquests').textContent }));
   ok('a quest reward that cannot be reclaimed is a keepsake, marked keep, with its quest found from the page links: ' + cq.quests.trim(), /^keep/.test(cq.v) && /cannot be reclaimed/.test(cq.v) && /tab 5/.test(cq.tab) && /Holy Grail/.test(cq.quests), JSON.stringify(cq));
+  { const at = await free(0); await hover(at, 'Mask of Sliske'); await hover(at, 'Mask of Sliske'); await page.evaluate(() => { window.alt1.mousePosition = -1; window.__tip = ''; }); await page.waitForTimeout(2500);
+    await page.hover('#list .item:has-text("Mask of Sliske")'); await page.waitForTimeout(400); await page.hover('#list .item:has-text("Magic logs")'); await page.hover('#list .item:has-text("Mask of Sliske")');
+    const dis = await page.evaluate(() => ({ blurb: document.getElementById('hblurb').textContent, wiki: document.getElementById('hwiki').getAttribute('data-url') }));
+    ok('a name that lands on a "may refer to" page is described by the first page on that list', /^Mask of Sliske, Light is an item/.test(dis.blurb) && dis.wiki === 'https://runescape.wiki/w/Mask_of_Sliske,_Light', JSON.stringify(dis)); }
   const btns = await page.$$eval('#filters button[data-f]', els => els.map(e => e.textContent.trim()));
   await page.click('#filters button[data-f="valuable"]');
   const val = await page.$$eval('#list .item .nm', els => els.map(e => e.textContent.trim()));
@@ -203,7 +207,7 @@ const { spawn } = require('child_process'); const path = require('path'), fs = r
 
   await page.reload(); await page.waitForTimeout(400);
   const kept = await page.evaluate(() => ({ lib: Bankwise._lib().names().length, s: Bankwise._settings }));
-  ok('library and settings survive a reload', kept.lib === 8 && kept.s.useQuests && kept.s.template === 'granular', JSON.stringify(kept));
+  ok('library and settings survive a reload', kept.lib === 9 && kept.s.useQuests && kept.s.template === 'granular', JSON.stringify(kept));
   ok('no page errors', errs.length === 0, errs.join(' | '));
 
   // the real thing: Scott's Alt1 capture with the game's tooltip showing, read by the real tooltip reader
