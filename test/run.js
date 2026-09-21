@@ -192,6 +192,7 @@ console.log("real captures");
   ok("an untradeable teleport item is kept, not sent for review", V2.judge({ name: "Skull of Remembrance", kind: "teleport", cats: [], tradeable: false, price: null, known: true }, {}, null, K).id === "keep");
   ok("a quest reward that cannot be reclaimed is kept", V2.judge({ name: "Excalibur", kind: "keepsake", cats: ["Quest rewards"], tradeable: false, price: null }, {}, null, K).id === "keep");
   ok("Geech Layout: charging items go with the tokens", tab("Artisanal gears") === 6 && tab("Silverhawk feathers") === 6 && tab("Silverhawk down") === 6 && tab("Divine charge") === 6 && tab("Piece of Het") === 6 && tab("Feather") === 5 && tab("Fletching cleaner") === 5 && tab("Spring cleaner 3000") === 5);
+  ok("an Archaeology artefact shaped like a weapon is still Archaeology (Gathering in the Geech Layout)", K.kindOf("Venator light crossbow", ["Artefacts", "Zarosian artefacts"]) === "archaeology" && tab("Venator light crossbow", ["Artefacts"]) === 4 && K.kindOf("Venator light crossbow", []) === "weapon");
   ok("the other layouts are unchanged by the Geech name rules", K.tabFor("metal", "five", "Steel bar").number === 4 && K.tabFor("weapon", "pvm", "Polypore staff").number === 2);
 })();
 console.log(fails ? fails + " FAILED" : "all checks passed");

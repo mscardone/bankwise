@@ -66,6 +66,8 @@
       r = RULES[i];
       if (r[1] && r[1].test(n)) byName = r[0];
     }
+    /* an Archaeology artefact is an artefact even when it is shaped like a crossbow or a helmet */
+    for (j = 0; j < cats.length; j++) if (/\bartefacts?\b/i.test(cats[j])) return "archaeology";
     if (!byName || !(untradeable ? QUEST_YIELDS_TO_UNTRADEABLE : QUEST_YIELDS_TO)[byName]) {
       /* a quest reward that Diango (or anyone) will not hand back is a keepsake, whatever it looks like */
       var reward = false, reclaim = false;

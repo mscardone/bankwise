@@ -2,7 +2,7 @@
    draws value/verdict markers over the game and explains each verdict. */
 (function () {
   "use strict";
-  var VERSION = "0.8.9";
+  var VERSION = "0.8.10";
   var READ_MS = 700, HOVER_MS = 250, OVERLAY_MS = 2500, OVERLAY_GROUP = "bankwise";
   function $(id) { return document.getElementById(id); }
   var store = {
@@ -124,6 +124,7 @@
     var it = Data.describe(name), wikiSaysQuest = !!it.questItem;
     /* the wiki does not file every quest item or quest reward under a category that says so, but its opening text
        usually does ("is used in The Feud quest", "a reward from the quest ..."): for untradeable items that counts too */
+    if (it.blurb && /\b(is|are) (an? |the )?([a-z-]+ ){0,2}artefacts?\b|\brestor(ed|ing) (at|on|an?|the)\b[^.]{0,60}\barchaeolog/i.test(it.blurb.slice(0, 300))) it.cats = it.cats.concat(["Archaeology artefacts"]);
     if (it.tradeable === false && it.blurb) {
       var open = it.blurb.slice(0, 500);
       if (/\brewards?\b[^.]{0,60}\bquest\b|\bquest\b[^.]{0,40}\brewards?\b/i.test(open)) it.cats = it.cats.concat(["Quest rewards"]);
