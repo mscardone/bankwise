@@ -34,17 +34,32 @@ const { spawn } = require('child_process'); const path = require('path'), fs = r
       part.forEach((t, k) => { pages[100 + k + (second ? 50 : 0)] = { title: t, images: [{ title: 'File:' + t + '.png' }, { title: 'File:' + t + ' detail.png' }, { title: 'File:Coins 1000.png' }] }; });
       return r.fulfill({ json: second ? { query: { pages } } : { continue: { gcmcontinue: 'page|x', continue: 'gcmcontinue||' }, query: { pages } }, headers: { 'access-control-allow-origin': '*' } });
     }
-    const titles = decodeURIComponent((r.request().url().match(/titles=([^&]*)/) || [])[1] || '').split('|'); const pages = {}; let i = 1;
+    const url = r.request().url(), cors = { 'access-control-allow-origin': '*' };
+    if (/cmtitle=Category(:|%3A)Quests/.test(url)) { const m = [{ title: 'While Guthix Sleeps' }, { title: 'Holy Grail' }]; for (let k = 0; k < 60; k++) m.push({ title: 'Filler quest ' + k }); return r.fulfill({ json: { query: { categorymembers: m } }, headers: cors }); }
+    const titles = decodeURIComponent((url.match(/titles=([^&]*)/) || [])[1] || '').split('|'); const pages = {}; let i = 1;
+    if (/prop=links/.test(url)) { titles.forEach(t => { pages[i++] = { title: t, links: /excalibur/i.test(t) ? [{ title: 'Holy Grail' }, { title: 'Sword' }] : [] }; }); return r.fulfill({ json: { query: { pages } }, headers: cors }); }
+    if (/rvprop=content/.test(url) && !/^Module:GE/.test(titles[0])) {   // item pages as wikitext: the combat-stats box
+      titles.forEach(t => { pages[i++] = { title: t, revisions: [{ slots: { main: { '*': /rune scimitar/i.test(t) ? "{{Infobox Bonuses\n|class = melee\n|slot = main hand weapon\n|tier = 50\n}}" : /noxious/i.test(t) ? "{{Infobox Bonuses\n|class=melee\n|slot=2h\n|tier=90}}" : 'no stats here' } } }] }; });
+      return r.fulfill({ json: { query: { pages } }, headers: cors });
+    }
     if (/^Module:GE/.test(titles[0])) {   // the wiki's own price / alch / value tables
-      const tables = { 'Module:GEPrices/data.json': { '%LAST_UPDATE%': 1, 'Magic logs': 412, 'Rusty sword': 60, 'Noxious scythe': 61000000 }, 'Module:GEHighAlchs/data.json': { 'Magic logs': 192, 'Rusty sword': 15, 'Noxious scythe': 300000 }, 'Module:GEValues/data.json': { 'Magic logs': 320 } };
+      const tables = { 'Module:GEPrices/data.json': { '%LAST_UPDATE%': 1, 'Magic logs': 412, 'Rusty sword': 60, 'Rune scimitar': 5200, 'Noxious scythe': 61000000 }, 'Module:GEHighAlchs/data.json': { 'Magic logs': 192, 'Rusty sword': 15, 'Noxious scythe': 300000 }, 'Module:GEValues/data.json': { 'Magic logs': 320 } };
       for (let k = 0; k < 120; k++) tables['Module:GEPrices/data.json']['Filler ' + k] = 5;
       titles.forEach(t => { pages[i++] = { title: t, revisions: [{ slots: { main: { '*': JSON.stringify(tables[t] || {}) } } }] }; });
       return r.fulfill({ json: { query: { pages } }, headers: { 'access-control-allow-origin': '*' } });
     }
-    titles.forEach(t => { if (/boits/i.test(t)) { pages[i++] = { title: t, missing: '' }; return; } const cats = /santa/i.test(t) ? ['Reclaimable from Diango', 'Holiday items'] : /commorb/i.test(t) ? ['Quest items', 'While Guthix Sleeps'] : /logs/i.test(t) ? ['Logs', 'Firemaking'] : ['Items']; pages[i++] = { title: t, categories: cats.map(c => ({ title: 'Category:' + c })) }; });
+    titles.forEach(t => { if (/boits/i.test(t)) { pages[i++] = { title: t, missing: '' }; return; } const cats = /santa/i.test(t) ? ['Reclaimable from Diango', 'Holiday items'] : /commorb/i.test(t) ? ['Quest items', 'While Guthix Sleeps'] : /excalibur/i.test(t) ? ['Quest rewards', 'Items'] : /logs/i.test(t) ? ['Logs', 'Firemaking'] : ['Items']; pages[i++] = { title: t, categories: cats.map(c => ({ title: 'Category:' + c })), extract: t + ' is an item in the pretend wiki. It is used for testing the detail card.' }; });
     r.fulfill({ json: { query: { pages } }, headers: { 'access-control-allow-origin': '*' } });
   });
-  await ctx.route('**/runemetrics/profile/profile**', r => r.fulfill({ json: { name: 'Tester', skillvalues: [{ id: 11, level: 99 }, { id: 9, level: 99 }, { id: 22, level: 99 }, { id: 8, level: 99 }] }, headers: { 'access-control-allow-origin': '*' } }));
+  // the Cloudflare Worker: this player's RuneMetrics profile is private, so levels come from the hiscores table
+  await ctx.route('**/dailyscape-proxy.scott-cardone.workers.dev/**', r => {
+    const u = r.request().url(), cors = { 'access-control-allow-origin': '*' };
+    if (/\/profile\?/.test(u)) return r.fulfill({ json: { error: 'PROFILE_PRIVATE', loggedIn: 'false' }, headers: cors });
+    if (/\/quests\?/.test(u)) return r.fulfill({ json: { quests: [{ title: 'While Guthix Sleeps', status: 'COMPLETED' }] }, headers: cors });
+    const lv = new Array(30).fill(1); lv[0] = 2000; lv[1] = 72; [11, 9, 22, 8].forEach(id => { lv[id + 1] = 99; });
+    return r.fulfill({ body: lv.map((l, k) => (1000 + k) + ',' + l + ',' + (l * 1000)).join('\n') + '\n-1,-1\n', headers: Object.assign({ 'content-type': 'text/plain' }, cors) });
+  });
+  await ctx.route('**/runemetrics/profile/profile**', r => r.fulfill({ json: { name: 'Tester', skillvalues: [{ id: 0, level: 72 }, { id: 11, level: 99 }, { id: 9, level: 99 }, { id: 22, level: 99 }, { id: 8, level: 99 }] }, headers: { 'access-control-allow-origin': '*' } }));
   await ctx.route('**/runemetrics/quests**', r => r.fulfill({ json: { quests: [{ title: 'While Guthix Sleeps', status: 'COMPLETED' }] }, headers: { 'access-control-allow-origin': '*' } }));
   const alt1Init = () => {
     window.__ov = []; const rec = n => (...a) => { window.__ov.push([n, ...a]); return true; };
@@ -122,12 +137,34 @@ const { spawn } = require('child_process'); const path = require('path'), fs = r
   const fixedNames = await page.evaluate(() => Bankwise._lib().names());
   ok('"Diamond boits" is corrected to the wiki\'s spelling: ' + fixedNames.join(', '), fixedNames.includes('Diamond bolts') && !fixedNames.includes('Diamond boits'), JSON.stringify(fixedNames));
 
+  // 0.8.2: wiki text and links on the card, quests an item is needed for, quest rewards as keepsakes, the new list buttons
+  const free = async n => page.evaluate((n) => Bankwise._view().slots.map((q, i) => q.id.state === 'unknown' ? i : -1).filter(i => i >= 0)[n], n);
+  for (const nm of ['Excalibur', 'Rune scimitar', 'Noxious scythe', 'Deathwarden hood']) { const at = await free(0); await hover(at, nm); await hover(at, nm); }
+  await page.evaluate(() => { window.alt1.mousePosition = -1; window.__tip = ''; }); await page.waitForTimeout(2500);
+  await page.hover('#list .item:has-text("Commorb")'); await page.waitForTimeout(1200); await page.hover('#list .item:has-text("Commorb")');
+  let cq = await page.evaluate(() => ({ blurb: document.getElementById('hblurb').textContent, quests: document.getElementById('hquests').innerHTML, wiki: document.getElementById('hwiki').getAttribute('data-url'), shown: document.getElementById('hwiki').style.display !== 'none' }));
+  ok('card: two sentences from the wiki and a link to the item page', /is used for testing/.test(cq.blurb) && cq.shown && cq.wiki === 'https://runescape.wiki/w/Commorb', JSON.stringify(cq));
+  ok('quest item: the card lists the quest with a link to its wiki page', /Needed for:/.test(cq.quests) && /data-url="https:\/\/runescape\.wiki\/w\/While_Guthix_Sleeps"/.test(cq.quests), cq.quests);
+  await page.screenshot({ path: path.join(__dirname, '../docs/ui-card.png') });
+  await page.evaluate(() => { window.__opened = []; window.alt1.openBrowser = u => { window.__opened.push(u); return true; }; }); await page.click('#hquests a'); await page.click('#hwiki');
+  ok('links open in the player\'s browser through Alt1', JSON.stringify(await page.evaluate(() => window.__opened)) === JSON.stringify(['https://runescape.wiki/w/While_Guthix_Sleeps', 'https://runescape.wiki/w/Commorb']));
+  await page.hover('#list .item:has-text("Excalibur")'); await page.waitForTimeout(1500); await page.hover('#list .item:has-text("Excalibur")');
+  cq = await page.evaluate(() => ({ v: document.getElementById('hverdict').textContent, tab: document.getElementById('htab').textContent, quests: document.getElementById('hquests').textContent }));
+  ok('a quest reward that cannot be reclaimed is a keepsake, marked keep, with its quest found from the page links: ' + cq.quests.trim(), /^keep/.test(cq.v) && /cannot be reclaimed/.test(cq.v) && /tab 5/.test(cq.tab) && /Holy Grail/.test(cq.quests), JSON.stringify(cq));
+  const btns = await page.$$eval('#filters button[data-f]', els => els.map(e => e.textContent.trim()));
+  await page.click('#filters button[data-f="valuable"]');
+  const val = await page.$$eval('#list .item .nm', els => els.map(e => e.textContent.trim()));
+  await page.click('#filters button[data-f="sell"]');
+  const sellL = await page.$$eval('#list .item .nm', els => els.map(e => e.textContent.trim()));
+  await page.click('#filters button[data-f="all"]');
+  ok('list buttons are ' + btns.join(' / ') + '; Valuable = priced items, dearest first: ' + val.join(' | '), btns.join('|') === 'All|To teach|Sell|Valuable' && /Noxious scythe/.test(val[0]) && /Rune scimitar/.test(val[1]) && val.length === 3 && sellL.some(t => /Santa hat/.test(t)), JSON.stringify({ btns, val, sellL }));
+
   // personal options are off by default, and work when switched on
   await page.click('#opensettings');
   ok('personal options start switched off', !(await page.isChecked('#usequests')) && !(await page.isChecked('#useskills')) && !(await page.isChecked('#useoverrides')));
   await page.check('#usequests'); await page.check('#useskills'); await page.check('#useoverrides');
   await page.fill('#rmuser', 'Tester'); await page.click('#rmfetch'); await page.waitForTimeout(800);
-  const rm = await page.textContent('#rmstatus'); ok('RuneMetrics lookup by username: "' + rm.trim() + '"', /skill levels and 1 quests/.test(rm), rm);
+  const rm = await page.textContent('#rmstatus'); ok('lookup by username through the worker (private profile -> hiscores levels): "' + rm.trim() + '"', /skill levels and 1 quests/.test(rm), rm);
   await page.selectOption('#template', 'granular');
   await page.screenshot({ path: path.join(__dirname, '../docs/ui-settings.png') });
   await page.click('#closesettings'); await page.waitForTimeout(900);
@@ -135,12 +172,19 @@ const { spawn } = require('child_process'); const path = require('path'), fs = r
   let c2 = await page.textContent('#hverdict'); ok('quest log on: finished quest -> item can go', /While Guthix Sleeps, which you have finished/.test(c2), c2);
   await page.hover('#list .item:has-text("Magic logs")');
   c2 = await page.textContent('#hover'); ok('skill levels on: logs at 99 Firemaking/Fletching -> sell; granular template -> tab 9', /already at your goal of 99/.test(c2) && /tab 9/.test(c2), c2.replace(/\s+/g, ' '));
+  await page.hover('#list .item:has-text("Rune scimitar")'); await page.waitForTimeout(1500); await page.hover('#list .item:has-text("Rune scimitar")');
+  c2 = await page.textContent('#hverdict'); ok('skill levels on: tier 50 weapon with 72 Attack -> sell', /^sell/.test(c2) && /Tier 50 melee weapon/.test(c2) && /Attack level of 72 lets you use tier 70/.test(c2), c2);
+  await page.hover('#list .item:has-text("Noxious scythe")'); await page.waitForTimeout(1200); await page.hover('#list .item:has-text("Noxious scythe")');
+  c2 = await page.textContent('#hverdict'); ok('a tier 90 weapon is kept', /^keep/.test(c2), c2);
+  await page.hover('#list .item:has-text("Deathwarden hood")');
+  c2 = await page.textContent('#hverdict'); ok('Deathwarden gear is always keep and the card says upgradeable', /^keep\s*upgradeable/.test(c2) && /upgraded rather than replaced/.test(c2), c2);
+  await page.hover('#list .item:has-text("Magic logs")');
   await page.click('#hpins button[data-pin="keep"]'); await page.waitForTimeout(300);
   c2 = await page.textContent('#hverdict'); ok('pin as always keep wins', /You pinned this as always keep/.test(c2), c2);
 
   await page.reload(); await page.waitForTimeout(400);
   const kept = await page.evaluate(() => ({ lib: Bankwise._lib().names().length, s: Bankwise._settings }));
-  ok('library and settings survive a reload', kept.lib === 4 && kept.s.useQuests && kept.s.template === 'granular', JSON.stringify(kept));
+  ok('library and settings survive a reload', kept.lib === 8 && kept.s.useQuests && kept.s.template === 'granular', JSON.stringify(kept));
   ok('no page errors', errs.length === 0, errs.join(' | '));
 
   // the real thing: Scott's Alt1 capture with the game's tooltip showing, read by the real tooltip reader

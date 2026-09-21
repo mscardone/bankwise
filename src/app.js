@@ -2,7 +2,7 @@
    draws value/verdict markers over the game and explains each verdict. */
 (function () {
   "use strict";
-  var VERSION = "0.8.1";
+  var VERSION = "0.8.3";
   var READ_MS = 700, HOVER_MS = 250, OVERLAY_MS = 5000, OVERLAY_GROUP = "bankwise";
   function $(id) { return document.getElementById(id); }
   var store = {
@@ -112,7 +112,10 @@
   function info(name) {
     var it = Data.describe(name);
     it.kind = Kinds.kindOf(name, it.cats);
-    it.tab = Kinds.tabFor(it.kind, settings.template, name, it);
+    it.tab = Kinds.tabFor(it.kind, settings.template, name);
+    it.upgradeable = Kinds.upgradeable(name);
+    /* gear tier is only looked up when it can matter: skills on, levels loaded, tradeable weapon or armour */
+    if (settings.useSkills && profile && profile.levels && it.tradeable && !it.upgradeable && (it.kind === "weapon" || it.kind === "armour")) it.gear = Data.gearFor(name);
     it.verdict = Verdict.judge(it, settings, profile, Kinds);
     if (name === "Coins") { it.price = 1; it.verdict = { id: "keep", tag: "", reason: "Money." }; }
     it.tier = tierOf(it.price);
@@ -291,8 +294,13 @@
     });
     total = 0; totalUnknown = 0;
     rows.forEach(function (r) { if (r.teach) return; if (r.value !== null) total += r.value; else if (r.it.price !== null) { total += r.it.price; totalUnknown++; } });
-    rows = rows.filter(function (r) { return filter === "all" || (filter === "teach" ? r.teach : (r.it && r.it.verdict.id === filter)); });
-    rows.sort(function (a, b) { return b.price - a.price; });
+    rows = rows.filter(function (r) {
+      if (filter === "all") return true;
+      if (filter === "teach") return !!r.teach;
+      if (filter === "sell") return !!r.it && (r.it.verdict.id === "sell" || r.it.verdict.id === "destroy");
+      return !!r.it && r.price > 0;      /* valuable */
+    });
+    if (filter !== "all") rows.sort(function (a, b) { return b.price - a.price; });      /* "All" stays in bank order */
     var html = rows.map(function (r, i) {
       var img = slotImg(r.slot);
       if (r.teach) return '<div class="item" data-i="' + i + '"><div class="mini" style="background-image:url(' + img + ')"></div><div class="nm"><span class="chip ' + (r.slot.id.state === "unsure" ? "unsure" : "teach") + '">' + (r.slot.id.state === "unsure" ? "unsure" : "new") + "</span> " + (r.slot.id.state === "unsure" ? esc(r.slot.id.name) + "?" : "hover it in the bank") + "</div></div>";
@@ -305,14 +313,14 @@
   function renderCard() {
     var s = shown && shown.slot, live = s && view && view.slots.indexOf(s) >= 0;
     if (s && !live && view) { var pk = posKey(s); s = null; view.slots.forEach(function (q) { if (posKey(q) === pk) s = q; }); if (s) shown.slot = s; }
-    if (!s) { $("hicon").style.backgroundImage = ""; $("hname").textContent = view ? "Hover an item" : "Open your bank"; $("hprice").innerHTML = "&nbsp;"; $("halch").innerHTML = "&nbsp;"; $("hverdict").innerHTML = view ? "Hover an item in the bank, or a row below, to see what it is worth, where it belongs and whether to keep it." : "&nbsp;"; $("htab").innerHTML = "&nbsp;"; $("hpins").style.display = settings.useOverrides ? "" : "none"; $("hpins").style.visibility = "hidden"; $("hfix").style.visibility = "hidden"; return; }
+    if (!s) { $("hicon").style.backgroundImage = ""; $("hname").textContent = view ? "Hover an item" : "Open your bank"; $("hprice").innerHTML = "&nbsp;"; $("halch").innerHTML = "&nbsp;"; $("hblurb").innerHTML = "&nbsp;"; $("hquests").innerHTML = "&nbsp;"; $("hwiki").style.display = "none"; $("hverdict").innerHTML = view ? "Hover an item in the bank, or a row below, to see what it is worth, where it belongs and whether to keep it." : "&nbsp;"; $("htab").innerHTML = "&nbsp;"; $("hpins").style.display = settings.useOverrides ? "" : "none"; $("hpins").style.visibility = "hidden"; $("hfix").style.visibility = "hidden"; return; }
     $("hicon").style.backgroundImage = "url(" + slotImg(s) + ")";
     $("hfix").style.visibility = ""; $("hpins").style.display = settings.useOverrides ? "" : "none";
     if (!named(s)) {
       $("hname").style.color = "";
       $("hname").textContent = s.id.state === "unsure" ? s.id.name + "?" : "Unknown item";
       $("hprice").innerHTML = hoverSlot === s && settings.teach ? (tipName ? "reading: <b>" + esc(tipName) + "</b>" : "keep the mouse still until the game shows its name") : "&nbsp;";
-      $("halch").innerHTML = "&nbsp;";
+      $("halch").innerHTML = "&nbsp;"; $("hblurb").innerHTML = "&nbsp;"; $("hquests").innerHTML = "&nbsp;"; $("hwiki").style.display = "none";
       $("hverdict").innerHTML = '<span class="chip ' + (s.id.state === "unsure" ? "unsure" : "teach") + '">' + (s.id.state === "unsure" ? "unsure" : "new") + "</span>" + (s.id.state === "unsure" ? "Looks like " + esc(s.id.name) + (s.id.rival ? " or " + esc(s.id.rival) : "") + ". Hover it in the bank to confirm." : (settings.teach ? "Hover it in the bank and I will remember it from then on." : "Teach is off. Tick teach at the top, then hover it, and I will remember it."));
       $("htab").innerHTML = "&nbsp;"; $("hpins").style.visibility = "hidden";
       return;
@@ -326,8 +334,21 @@
       ? "<b>" + Verdict.gp(it.price) + "</b> each" + (many && sv !== null ? " &middot; " + (st.approx ? "about " : "") + Verdict.short(st.qty) + " of them = <b class='gold'>" + (st.approx ? "~" : "") + Verdict.short(sv) + "</b>" : "") + (st === null ? " &middot; stack size unread" : "")
       : (it.tradeable === false ? "not tradeable" : "price not loaded") + (many ? " &middot; " + Verdict.short(st.qty) + " of them" : "");
     $("halch").innerHTML = it.alch ? "High alch <b>" + Verdict.gp(it.alch) + "</b>" + (many ? " &middot; stack <b>" + Verdict.short(it.alch * st.qty) + "</b>" : "") + (it.price !== null && it.alch > it.price ? " <span class='twin'>more than it sells for</span>" : "")
-      : (it.tradeable === false ? "High alch: not known (the price tables only list tradeable items)" : (it.alch === 0 ? "High alch: nothing" : "High alch: not loaded"));
-    $("hverdict").innerHTML = '<span class="chip ' + it.verdict.id + '">' + it.verdict.id + "</span>" + esc(it.verdict.reason) +
+      : (it.tradeable === false ? "High alch: not known for untradeable items" : (it.alch === 0 ? "High alch: nothing" : "High alch: not loaded"));
+    $("hblurb").textContent = it.blurb || "\u00a0"; $("hblurb").title = it.blurb || "";
+    $("hwiki").style.display = ""; $("hwiki").setAttribute("data-url", Data.wikiUrl(it.wikiTitle));
+    var qhtml = "&nbsp;";
+    if (it.questItem || it.kind === "quest" || it.kind === "keepsake") {
+      var qs = Data.questsFor(it.name);
+      if (qs === null) qhtml = "Looking up its quests...";
+      else if (!qs.length) qhtml = "The wiki does not say which quest it belongs to.";
+      else qhtml = (it.kind === "keepsake" ? "From: " : "Needed for: ") + qs.slice(0, 6).map(function (q) {
+        var st = profile && profile.quests && profile.quests[Verdict.norm(q)], done = st && st.status === "COMPLETED";
+        return '<a href="#" class="ext' + (done ? " done" : "") + '" data-url="' + esc(Data.wikiUrl(q)) + '" title="' + (done ? "you have finished this quest" : "open the quest's wiki page") + '">' + esc(q) + "</a>";
+      }).join(", ") + (qs.length > 6 ? " and " + (qs.length - 6) + " more" : "");
+    }
+    if (qhtml !== $("hquests")._html) { $("hquests").innerHTML = qhtml; $("hquests")._html = qhtml; }
+    $("hverdict").innerHTML = '<span class="chip ' + it.verdict.id + '">' + it.verdict.id + "</span>" + (it.upgradeable ? '<span class="chip review">upgradeable</span>' : "") + esc(it.verdict.reason) +
       (s.id.state === "guess" ? " <span class='qty'>Recognised from the wiki's icon" + (s.id.alts && s.id.alts.length ? " (could also be " + esc(s.id.alts.join(", ")) + ")" : "") + "; hovering it in the bank settles it.</span>" : "") +
       (s.id.state === "twin" ? " <span class='twin'>Same icon as " + esc(s.id.twins.filter(function (n) { return n !== it.name; }).join(", ")) + " - showing the one you last hovered.</span>" : "");
     $("htab").innerHTML = "Belongs in <b>tab " + it.tab.number + " &middot; " + esc(it.tab.name) + "</b> <span title='" + esc(it.cats.slice(0, 12).join(", ")) + "'>(" + esc(Kinds.KIND_LABEL[it.kind]) + ")</span>";
@@ -351,7 +372,7 @@
     var el = $("rmstatus"), parts = [];
     if (profile && profile.levels) parts.push("skill levels");
     if (profile && profile.quests) parts.push(Object.keys(profile.quests).length + " quests");
-    el.textContent = msg || (parts.length ? "Loaded " + parts.join(" and ") + " for " + (profile.name || settings.rmUser) + " on " + new Date(profile.at).toLocaleDateString() + "." : "Only needed for the quest-log and skill-level options. Your RuneMetrics profile must be public.");
+    el.textContent = msg || (parts.length ? "Loaded " + parts.join(" and ") + " for " + (profile.name || settings.rmUser) + " on " + new Date(profile.at).toLocaleDateString() + "." : "Only needed for the quest-log and skill-level options. The quest log needs a public RuneMetrics profile; skill levels work either way.");
     el.className = "hint" + (bad ? " bad" : parts.length && !msg ? " ok" : "");
     $("rmbox").className = settings.useQuests || settings.useSkills ? "" : "off";
     $("rmurls").innerHTML = RuneMetrics.urls($("rmuser").value || "YourName").map(esc).join("<br>");
@@ -481,6 +502,14 @@
       if (v) settings.overrides[key] = v; else delete settings.overrides[key];
       changed();
     });
+  });
+  /* wiki links open in the player's own browser, not inside the app window */
+  $("hover").addEventListener("click", function (e) {
+    var el = e.target; while (el && el !== this && !(el.getAttribute && el.getAttribute("data-url"))) el = el.parentNode;
+    if (!el || el === this) return;
+    e.preventDefault();
+    var url = el.getAttribute("data-url");
+    try { if (window.alt1 && alt1.openBrowser) alt1.openBrowser(url); else window.open(url, "_blank"); } catch (err) { window.open(url, "_blank"); }
   });
   $("rename").addEventListener("click", function (e) { e.preventDefault(); var s = shown && shown.slot; $("renamebox").style.display = ""; $("renameinput").value = s && s.id.name && s.id.state !== "unknown" ? s.id.name : ""; $("renameinput").focus(); });
   $("renameok").addEventListener("click", function () {

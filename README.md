@@ -8,7 +8,7 @@ An [Alt1 Toolkit](https://runeapps.org/alt1) app for RuneScape 3 that reads your
 
 It only reads the screen and draws markers. It never clicks, types or moves anything in the game.
 
-> **Status: v0.8.1.** Bank reading, item matching and tooltip reading are tested on real Alt1
+> **Status: v0.8.3.** Bank reading, item matching and tooltip reading are tested on real Alt1
 > captures (items match pixel-for-pixel between captures). The wiki lookups and the RuneMetrics
 > lookup have not worked live yet. See "Not proven yet" below.
 
@@ -31,7 +31,8 @@ The app needs the **pixel**, **overlay** and **game state** permissions (game st
    - a coloured bar along the top for what **one** of the item is worth: green 1k+, teal 10k+, blue 100k+, purple 1m+, gold 10m+;
    - the value of the whole stack in gold under the item (`950`, `12.3K`, `1.23M`, `2.5B`; the app reads the stack number);
    - a letter in the top right corner when there is advice: **J** junk (sell or alch), **D** reclaimable from Diango (safe to destroy), **Q** quest item for a finished quest, **K** quest item to keep.
-4. Hover an item in the bank, or a row in the app, for the detail card: price, stack value, high alch value, the tab it belongs in and the reason for the verdict. The card follows the mouse whether or not teach is on.
+4. Hover an item in the bank, or a row in the app, for the detail card: price, stack value, high alch value, a couple of sentences about the item from its wiki page, the verdict and its reason, the quests a quest item is needed for (each a link to the quest's wiki page), the tab it belongs in, and a link to the item's own wiki page. Links open in your normal browser.
+   The buttons over the list: **All** (bank order), **To teach**, **Sell** (everything the advice says to get rid of) and **Valuable** (everything with a price, dearest stack first). The card follows the mouse whether or not teach is on.
 5. The **teach** tick-box in the header switches learning from tooltips on and off. *Type the name yourself* on the card fixes a misread.
 6. A small amber corner means the item shares its exact icon with other items (a ring and its enchanted version, a necklace at different charges): the app shows whichever one you hovered last and lists the rest on the card.
 7. An amber box means "looks like X, not sure" - hover it once to settle it. If a name was read wrongly, use *wrong name?* on the card.
@@ -41,7 +42,7 @@ The app needs the **pixel**, **overlay** and **game state** permissions (game st
 - **Bank layout** - five templates (five-tab essentials, PvM-focused, skiller, granular 14-tab, and the author's own eight-tab Geech Layout). The tab numbers on screen follow the template.
 - **Advice** - out of the box only wiki data is used, so advice is the same for everyone. Three options, all off by default, make it personal:
   - *my quest log* - a quest item whose quest you have finished can go;
-  - *my skill levels* with a goal level - logs are a keeper at 80 Firemaking and sellable at 99;
+  - *my skill levels* with a goal level - logs are a keeper at 80 Firemaking and sellable at 99; tradeable weapons and armour below the tier your level lets you use are marked sell (72 Defence = tier 70, so tier 60 armour goes), except upgradeable gear such as Deathwarden and Deathdealer, which is always kept and says *upgradeable* on the card;
   - *my own pins* - mark any item always-keep or always-junk.
 - **RuneMetrics** - type your name and press *Look up* to fetch skills and quests (your profile must be public). If the lookup is blocked, the panel shows the two addresses to open and a box to paste the result into.
 - **Overlay** - every part of the overlay has its own tick-box: the colour bars (with your own hex colours and gp cutoffs), the stack value (own colour, optional minimum total, single items or not), each advice letter (J, D, Q, K, and an optional ? for "check before destroying"), and each kind of box. *Overlay back to defaults* undoes it all.
@@ -62,8 +63,9 @@ The app needs the **pixel**, **overlay** and **game state** permissions (game st
 
 1. **Other interface scales and long item names.** Tested at the default scale only; a name that wraps onto a second tooltip line is read as its first line.
 2. **Different items that share one icon** (three in the test bank) can never be told apart by looks: they stay amber and the card says "X or Y".
-3. **Wiki answers.** The names of the wiki's price tables (new in 0.7.0, not yet seen answering from inside Alt1; *reader debug -> Test the wiki data sources* shows what came back), the price file's field names and the category names the rules look for (`Reclaimable from Diango`, `Quest items`, a category named after the quest) are from memory of the wiki, not from a checked response. The debug panel shows what each source last said.
-4. **RuneMetrics from inside Alt1** - may be blocked cross-origin; JSONP and paste are the fallbacks.
+3. **New in 0.8.2 and not yet seen answering inside Alt1**: the opening sentences (`prop=extracts`), the quest list (`Category:Quests`), quest rewards (a category matching "quest rewards"), and gear tiers (read from `|tier=`, `|class=`, `|slot=` in the item page's text). *Test the wiki data sources* reports on each.
+4. **Wiki answers.** The names of the wiki's price tables (new in 0.7.0, not yet seen answering from inside Alt1; *reader debug -> Test the wiki data sources* shows what came back), the price file's field names and the category names the rules look for (`Reclaimable from Diango`, `Quest items`, a category named after the quest) are from memory of the wiki, not from a checked response. The debug panel shows what each source last said.
+5. **RuneMetrics from inside Alt1** - may be blocked cross-origin; JSONP and paste are the fallbacks.
 
 Not built yet: stack sizes at interface scales other than 100%, placeholders, and a whole-bank report.
 

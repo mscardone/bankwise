@@ -44,6 +44,13 @@
   }
   function norm(s) { return String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim(); }
 
+  /* the skill that decides whether a piece of gear is still worth wearing: armour goes by Defence, weapons by their style */
+  function gearSkill(gear, kind) {
+    if (kind === "armour") return 1;
+    var c = String(gear.cls || "").toLowerCase();
+    return /rang/.test(c) ? 4 : /mag/.test(c) ? 6 : /necro/.test(c) ? 28 : 0;
+  }
+
   /* which quest does this item belong to?  quest items sit in a wiki category named after the quest */
   function questOf(item, profile) {
     if (!profile || !profile.quests) return null;
@@ -69,7 +76,16 @@
       return { id: "keep", tag: "K", reason: "Quest item." + (opts.useQuests ? " Could not tell which quest it belongs to." : " Turn on the quest check in settings to see whether you still need it.") };
     }
 
+    if (item.kind === "keepsake") return { id: "keep", tag: "K", reason: "Quest reward that cannot be reclaimed - keep it." };
+    if (item.upgradeable) return { id: "keep", tag: "", reason: "Upgradeable gear: it is upgraded rather than replaced, so keep it." };
+
     if (item.tradeable === null) return { id: "review", tag: "", reason: "Prices have not loaded, so there is no advice yet." };
+
+    /* gear you have outgrown: tier below the tier your level lets you wear (level 72 -> tier 70) */
+    if (opts.useSkills && profile && profile.levels && item.tradeable && item.gear && item.gear.tier && (item.kind === "weapon" || item.kind === "armour")) {
+      var sk = gearSkill(item.gear, item.kind), lvl = profile.levels[sk] || 1, mine = Math.floor(lvl / 10) * 10;
+      if (item.gear.tier < mine) return { id: "sell", tag: "J", reason: "Tier " + item.gear.tier + " " + (item.gear.cls || "") + (item.kind === "weapon" ? " weapon" : " armour") + ", and your " + SKILLS[sk] + " level of " + lvl + " lets you use tier " + mine + ": sell it." };
+    }
 
     var supply = !!Kinds.SUPPLY[item.kind];
     if (supply && opts.useSkills && profile && profile.levels) {

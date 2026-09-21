@@ -88,6 +88,11 @@ footer{margin-top:8px}
 #dbgout a{color:var(--blue)}
 
 .twin{color:var(--amber)}
+#hblurb{margin-top:5px;font-size:11px;line-height:1.35;height:30px;overflow:hidden;color:var(--text);opacity:.85}
+#hquests{font-size:11px;line-height:1.35;height:30px;overflow:hidden;color:var(--dim)}
+#hquests a,#hfix a.ext{color:var(--blue)}
+#hquests .done{text-decoration:line-through;opacity:.7}
+#hfix a{margin-right:10px}
 .gold{color:var(--stackgold,#f8d56b)}
 #halch{color:var(--dim);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #halch b{color:var(--text)}

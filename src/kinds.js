@@ -13,7 +13,7 @@
   var RULES = [
     ["clue", /clue scroll|sealed clue|puzzle casket|reward casket|scroll box|^casket|globetrotter|treasure trail/i, /treasure trails?( |$)|clue scrolls/i],
     ["quest", null, /^quest items$|quest items/i],
-    ["holiday", /\b(christmas|santa|easter|hallowe'?en|pumpkin|cracker|party ?hat|partyhat|bunny ears|reindeer|snowman|jack lantern)\b/i, /holiday|diango|discontinued|cosmetic overrides?|treasure hunter/i],
+    ["holiday", /\b(christmas|santa|easter|hallowe'?en|pumpkin|cracker|party ?hat|partyhat|bunny ears|reindeer|snowman|jack lantern)\b/i, /holiday|seasonal|diango|discontinued|cosmetic|treasure hunter/i],
     ["currency", /^coins$|token|\bticket\b|\bvoucher\b|chimes|taijitu|\bmarks? of\b|tokkul|teci|zemomark|thaler|\bpoints?\b|oddments|bond$|wildcard$|\breset$|\brefresh$/i, /currenc/i],
     ["teleport", /teleport|\btablet\b|\bdramen\b|games necklace|ring of duelling|amulet of glory|skills necklace|combat bracelet|digsite pendant|ring of kinship|enlightened amulet|traveller's necklace|slayer ring|luck of the dwarves|wicked hood|ectophial|lodestone|sixth-age circuit|tokkul-zo|drakan's medallion|explorer's ring|ardougne cloak|karamja gloves|passage of the abyss|attuned crystal teleport seed|charter/i, /teleportation|teleport items/i],
     ["runes", /\brune$|\brunes$|rune \(|essence$|\bessence\b|talisman|tiara|runic|\bvis wax\b|magical thread|binding contract/i, /^runes$|runecrafting|talismans|tiaras/i],
@@ -47,7 +47,7 @@
     clue: "Clues", quest: "Quest items", holiday: "Holiday & cosmetic", currency: "Currency & tokens", teleport: "Teleports", runes: "Runes & runecrafting", ammo: "Ammunition",
     potion: "Potions", herblore: "Herblore supplies", food: "Food & cooking", summoning: "Summoning", prayer: "Bones & ashes", seeds: "Farming", wood: "Logs, planks & fletching",
     metal: "Ores & bars", gems: "Gems & crafting", hides: "Hides & leather", invention: "Invention", divination: "Divination", archaeology: "Archaeology", slayer: "Slayer",
-    outfit: "Skilling outfits & capes", tools: "Tools", jewellery: "Jewellery & pocket", weapon: "Weapons", armour: "Armour", keys: "Keys, lamps & boosts", misc: "Everything else"
+    keepsake: "Quest rewards & keepsakes", outfit: "Skilling outfits & capes", tools: "Tools", jewellery: "Jewellery & pocket", weapon: "Weapons", armour: "Armour", keys: "Keys, lamps & boosts", misc: "Everything else"
   };
   /* kinds that are used up by playing: a low unit price does not make these junk */
   var SUPPLY = { runes: 1, ammo: 1, potion: 1, herblore: 1, food: 1, summoning: 1, prayer: 1, seeds: 1, wood: 1, metal: 1, gems: 1, hides: 1, invention: 1, divination: 1, archaeology: 1, teleport: 1, currency: 1 };
@@ -64,7 +64,13 @@
       r = RULES[i];
       if (r[1] && r[1].test(n)) byName = r[0];
     }
-    if (byName && !QUEST_YIELDS_TO[byName]) for (j = 0; j < cats.length; j++) if (/^quest items$/i.test(cats[j])) return "quest";
+    if (!byName || !QUEST_YIELDS_TO[byName]) {
+      /* a quest reward that Diango (or anyone) will not hand back is a keepsake, whatever it looks like */
+      var reward = false, reclaim = false;
+      for (j = 0; j < cats.length; j++) { if (/quest rewards?/i.test(cats[j])) reward = true; if (/diango|reclaim/i.test(cats[j])) reclaim = true; }
+      if (reward && !reclaim) return "keepsake";
+      if (byName) for (j = 0; j < cats.length; j++) if (/^quest items$/i.test(cats[j])) return "quest";
+    }
     if (byName) return byName;
     for (i = 0; i < RULES.length; i++) {
       r = RULES[i];
@@ -77,19 +83,19 @@
   var TEMPLATES = [
     { id: "five", name: "Five-tab essentials", blurb: "The layout most guides agree on: an inbox, gear, combat supplies, skilling, and things to sell.",
       tabs: [["Inbox (sort me)", ["misc"]], ["Gear", ["weapon", "armour", "jewellery", "ammo", "runes", "teleport", "slayer"]], ["Combat supplies", ["potion", "food", "summoning", "prayer", "herblore"]],
-        ["Skilling", ["tools", "outfit", "wood", "metal", "gems", "hides", "seeds", "invention", "divination", "archaeology"]], ["Loot, quest & keepsakes", ["clue", "quest", "holiday", "currency", "keys"]]] },
+        ["Skilling", ["tools", "outfit", "wood", "metal", "gems", "hides", "seeds", "invention", "divination", "archaeology"]], ["Loot, quest & keepsakes", ["clue", "quest", "holiday", "keepsake", "currency", "keys"]]] },
     { id: "pvm", name: "PvM-focused", blurb: "Gear split by what you grab before a boss; skilling squeezed into two tabs.",
       tabs: [["Inbox (sort me)", ["misc"]], ["Weapons & ammo", ["weapon", "ammo", "runes"]], ["Armour", ["armour"]], ["Jewellery & teleports", ["jewellery", "teleport"]],
         ["Potions & food", ["potion", "food", "prayer"]], ["Familiars & Slayer", ["summoning", "slayer"]], ["Skilling supplies", ["herblore", "wood", "metal", "gems", "hides", "seeds", "invention", "divination", "archaeology"]],
-        ["Tools & outfits", ["tools", "outfit"]], ["Loot, clues & keepsakes", ["clue", "quest", "holiday", "currency", "keys"]]] },
+        ["Tools & outfits", ["tools", "outfit"]], ["Loot, clues & keepsakes", ["clue", "quest", "holiday", "keepsake", "currency", "keys"]]] },
     { id: "skiller", name: "Skiller", blurb: "One tab per family of skills; combat gear kept together out of the way.",
       tabs: [["Inbox (sort me)", ["misc"]], ["Tools, outfits & teleports", ["tools", "outfit", "teleport", "jewellery"]], ["Gathering: wood & metal", ["wood", "metal"]], ["Herblore & Farming", ["herblore", "seeds", "potion"]],
         ["Cooking & Prayer", ["food", "prayer"]], ["Crafting & Runecrafting", ["gems", "hides", "runes"]], ["Invention, Divination & Archaeology", ["invention", "divination", "archaeology"]],
-        ["Combat gear", ["weapon", "armour", "ammo", "summoning", "slayer"]], ["Clues, quest & keepsakes", ["clue", "quest", "holiday", "currency", "keys"]]] },
+        ["Combat gear", ["weapon", "armour", "ammo", "summoning", "slayer"]], ["Clues, quest & keepsakes", ["clue", "quest", "holiday", "keepsake", "currency", "keys"]]] },
     { id: "granular", name: "Granular (14 tabs)", blurb: "Nearly one tab per kind, for big banks where five tabs become a wall of icons.",
       tabs: [["Inbox (sort me)", ["misc"]], ["Weapons", ["weapon"]], ["Armour", ["armour"]], ["Jewellery & teleports", ["jewellery", "teleport"]], ["Ammo & runes", ["ammo", "runes"]], ["Potions & herblore", ["potion", "herblore"]],
         ["Food, bones & ashes", ["food", "prayer"]], ["Summoning & Slayer", ["summoning", "slayer"]], ["Wood & fletching", ["wood"]], ["Ores, bars, gems & hides", ["metal", "gems", "hides"]], ["Farming", ["seeds"]],
-        ["Invention, Divination & Archaeology", ["invention", "divination", "archaeology"]], ["Tools & outfits", ["tools", "outfit"]], ["Clues, quest, currency & keepsakes", ["clue", "quest", "holiday", "currency", "keys"]]] },
+        ["Invention, Divination & Archaeology", ["invention", "divination", "archaeology"]], ["Tools & outfits", ["tools", "outfit"]], ["Clues, quest, currency & keepsakes", ["clue", "quest", "holiday", "keepsake", "currency", "keys"]]] },
     /* Scott's own bank.  The kinds are coarser than his tabs (one "weapon" kind, ores and bars together), so a few
        name rules run before the kind -> tab table: [kinds the rule applies to, name pattern, tab index]. */
     { id: "geech", name: "Geech Layout", blurb: "How Geech keeps his bank: combat and magic apart, skills split into gathering and making, and a tab each for D&Ds, quests and keepsakes.",
@@ -100,10 +106,7 @@
         ["Crafting Skills", ["gems", "hides", "herblore", "invention"], "Crafting, Fletching, Construction, Smithing, Cooking, Herblore, Invention"],
         ["D&D, Minigames, Tokens", ["clue", "currency", "keys"], "Clues, D&D and minigame rewards, tokens, keys, lamps and stars"],
         ["Quest Items", ["quest"], "Quest items"],
-        ["Rare Loot, Keepsakes, and Seasonal", ["holiday"], "Anything worth 100m or more each, boss pets, holiday and discontinued items, keepsakes"]],
-      /* rare loot: checked before everything else.  The wiki has no "lowest drop rate" flag to read, so for now
-         it is the price of one item, plus the boss-pet category; both are easy to change */
-      rare: { tab: 7, price: 1e8, cats: /boss pets?|^pets$/i },
+        ["Keepsakes, Cosmetics, and Seasonal", ["holiday", "keepsake"], "Seasonal, discontinued and cosmetic items, and quest rewards that cannot be reclaimed"]],
       rules: [
         [null, /deathwarden|deathdealer|death guard|skull lantern|soulbound lantern|necromancer|omni guard|deathstorm|\bmemento$/i, 1],
         [null, /^pot of flour$|^bucket of milk$|^egg$|\bspices?$|^cinnamon$|\bdye$|limestone|marble block|\bbrick$/i, 4],
@@ -119,14 +122,16 @@
   ];
   function template(id) { for (var i = 0; i < TEMPLATES.length; i++) if (TEMPLATES[i].id === id) return TEMPLATES[i]; return TEMPLATES[0]; }
   /* -> {index (0-based), number (as the game counts tabs, 1 = the first tab), name} */
-  function tabFor(kind, templateId, name, item) {
+  function tabFor(kind, templateId, name) {
     var t = template(templateId), i;
-    if (t.rare && item && ((item.price !== null && item.price !== undefined && item.price >= t.rare.price) || (item.cats || []).some(function (c) { return t.rare.cats.test(c); })))
-      return { index: t.rare.tab, number: t.rare.tab + 1, name: t.tabs[t.rare.tab][0] };
     if (t.rules && name) for (i = 0; i < t.rules.length; i++) if ((!t.rules[i][0] || t.rules[i][0].indexOf(kind) >= 0) && t.rules[i][1].test(name)) return { index: t.rules[i][2], number: t.rules[i][2] + 1, name: t.tabs[t.rules[i][2]][0] };
     for (i = 0; i < t.tabs.length; i++) if (t.tabs[i][1].indexOf(kind) >= 0) return { index: i, number: i + 1, name: t.tabs[i][0] };
     return { index: 0, number: 1, name: t.tabs[0][0] };
   }
 
-  return { kindOf: kindOf, tabFor: tabFor, template: template, TEMPLATES: TEMPLATES, KIND_LABEL: KIND_LABEL, SUPPLY: SUPPLY, TRAINS: TRAINS, RULES: RULES };
+  /* gear that is upgraded rather than replaced: never "below your tier" */
+  var UPGRADEABLE = /deathwarden|deathdealer|death guard|skull lantern|first necromancer|masterwork|\(tier \d+\)|\+ ?\d$/i;
+  function upgradeable(name) { return UPGRADEABLE.test(String(name || "")); }
+
+  return { upgradeable: upgradeable, kindOf: kindOf, tabFor: tabFor, template: template, TEMPLATES: TEMPLATES, KIND_LABEL: KIND_LABEL, SUPPLY: SUPPLY, TRAINS: TRAINS, RULES: RULES };
 });

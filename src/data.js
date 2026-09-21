@@ -21,7 +21,7 @@
   var store = { get: function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } }, set: function (k, v) { try { localStorage.setItem(k, v); return true; } catch (e) { return false; } } };
 
   var prices = null, pricesAt = 0, facts = {}, pending = {}, queue = [], timer = null, listeners = [];
-  var status = { prices: "not loaded", facts: "idle", alch: "not loaded", lastError: "" };
+  var status = { prices: "not loaded", facts: "idle", alch: "not loaded", quests: "not loaded", lastError: "" };
 
   function key(name) { return String(name || "").toLowerCase().replace(/\s+/g, " ").trim(); }
   function changed() { listeners.forEach(function (f) { try { f(); } catch (e) { /* ui only */ } }); }
@@ -118,7 +118,9 @@
   /* debug: fetch each source once and report exactly what came back */
   function selfTest() {
     var urls = [["wiki price + alch tables", bulkUrl()], ["price dump", PRICE_URL], ["price, one item", PRICE_ONE + encodeURIComponent("Magic logs|Santa hat")],
-      ["wiki categories", WIKI_API + "?action=query&format=json&origin=*&redirects=1&prop=categories&cllimit=max&clshow=!hidden&titles=" + encodeURIComponent("Magic logs|Santa hat|Commorb")]];
+      ["quest list (first 5)", WIKI_API + "?action=query&format=json&origin=*&list=categorymembers&cmtitle=Category:Quests&cmnamespace=0&cmlimit=5"],
+      ["gear tier, from the text of Rune platebody", WIKI_API + "?action=query&format=json&origin=*&redirects=1&prop=revisions&rvprop=content&rvslots=main&titles=Rune%20platebody"],
+      ["wiki categories + opening sentences", WIKI_API + "?action=query&format=json&origin=*&redirects=1&prop=categories%7Cextracts&cllimit=max&clshow=!hidden&exintro=1&explaintext=1&exsentences=2&exlimit=max&titles=" + encodeURIComponent("Magic logs|Santa hat|Commorb")]];
     return Promise.all(urls.map(function (u) {
       return fetch(u[1]).then(function (r) { return r.text().then(function (t) {
         if (u[0] === "wiki price + alch tables") {
@@ -128,7 +130,8 @@
             return u[0] + ": HTTP " + r.status + ", " + t.length + " chars\n" + rows.join("\n");
           } catch (e) { /* fall through to the raw text */ }
         }
-        return u[0] + ": HTTP " + r.status + ", " + t.length + " chars\n    " + t.slice(0, u[0] === "wiki categories" ? 1500 : 400).replace(/\s+/g, " "); }); })
+        if (/^gear tier/.test(u[0])) { var bits = (t.match(/\|\s*(tier|class|slot)\d*\s*=[^|\\]{0,30}/gi) || []).slice(0, 6); return u[0] + ": HTTP " + r.status + ", " + t.length + " chars\n    read as " + JSON.stringify(parseGear(t.replace(/\\n/g, "\n"))) + "   lines found: " + bits.join("  "); }
+        return u[0] + ": HTTP " + r.status + ", " + t.length + " chars\n    " + t.slice(0, /^wiki categories/.test(u[0]) ? 2200 : 400).replace(/\s+/g, " "); }); })
         .catch(function (e) { return u[0] + ": FAILED - " + e.message + "\n    " + u[1]; });
     }));
   }
@@ -162,18 +165,18 @@
   function saveFacts() { store.set("bankwise.facts.v1", JSON.stringify(facts)); }
   function factsFor(name) {
     var k = key(name), f = facts[k];
-    if (f && Date.now() - f.at < 30 * DAY) return f;
+    if (f && Date.now() - f.at < 30 * DAY && f.blurb !== undefined) return f;      /* no blurb field = cached before 0.8.2: ask again once */
     if (!pending[k] && name) { pending[k] = 1; queue.push(name); if (!timer) timer = setTimeout(flush, 400); }
     return f || null;
   }
   function flush() {
     timer = null;
-    var batch = queue.splice(0, 40);
+    var batch = queue.splice(0, 20);      /* 20 = as many opening paragraphs as the wiki hands out per request */
     if (!batch.length) return;
     status.facts = "asking the wiki about " + batch.length + " item" + (batch.length === 1 ? "" : "s");
-    var url = WIKI_API + "?action=query&format=json&origin=*&redirects=1&prop=categories&cllimit=max&clshow=!hidden&titles=" + encodeURIComponent(batch.join("|"));
+    var url = WIKI_API + "?action=query&format=json&origin=*&redirects=1&prop=categories%7Cextracts&cllimit=max&clshow=!hidden&exintro=1&explaintext=1&exsentences=2&exlimit=max&titles=" + encodeURIComponent(batch.join("|"));
     fetch(url).then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); }).then(function (j) { return collect(j, url, batch, 0); }).then(function () {
-      batch.forEach(function (n) { var k = key(n); delete pending[k]; if (!facts[k]) facts[k] = { at: Date.now(), cats: [], missing: true }; });
+      batch.forEach(function (n) { var k = key(n); delete pending[k]; if (!facts[k]) facts[k] = { at: Date.now(), cats: [], missing: true }; if (facts[k].blurb === undefined) facts[k].blurb = ""; });
       saveFacts(); status.facts = Object.keys(facts).length + " items known"; changed();
       if (queue.length) timer = setTimeout(flush, 1200);
     }).catch(function (e) {
@@ -187,8 +190,9 @@
     for (id in (q.pages || {})) {
       var pg = q.pages[id], from = pg.title, guard = 0;
       while (back[from] && guard++ < 4) from = back[from];
-      var k = key(from), f = facts[k] && facts[k].fresh ? facts[k] : (facts[k] = { at: Date.now(), cats: [], fresh: 1 });
+      var old = facts[key(from)], k = key(from), f = old && old.fresh ? old : (facts[k] = { at: Date.now(), cats: [], fresh: 1, quests: old && old.quests, gear: old && old.gear });
       f.title = pg.title; f.missing = pg.missing !== undefined;
+      if (typeof pg.extract === "string" && pg.extract) f.blurb = tidyBlurb(pg.extract);
       (pg.categories || []).forEach(function (c) { var t = String(c.title).replace(/^Category:/, ""); if (f.cats.indexOf(t) < 0) f.cats.push(t); });
     }
     if (j && j["continue"] && depth < 4) {
@@ -198,6 +202,88 @@
     }
     for (id in facts) delete facts[id].fresh;
     return true;
+  }
+  /* ---------- which quests need this item? ---------- */
+  /* the list of every quest (Category:Quests), then for an item: its categories that are named after a quest,
+     and failing that the quests its wiki page links to */
+  var quests = null, questsLoading = false, questPending = {};
+  function nk(s) { return String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim(); }
+  function loadQuests() {
+    if (quests || questsLoading) return;
+    try { var c = JSON.parse(store.get("bankwise.quests.v1") || "null"); if (c && c.t && c.t.length > 50 && Date.now() - c.at < 30 * DAY) { quests = {}; c.t.forEach(function (t) { quests[nk(t)] = t; }); return; } } catch (e) { /* refetch */ }
+    questsLoading = true;
+    var titles = [], base = WIKI_API + "?action=query&format=json&origin=*&list=categorymembers&cmtitle=Category:Quests&cmnamespace=0&cmlimit=500";
+    (function page(cont, depth) {
+      return fetch(base + (cont ? "&cmcontinue=" + encodeURIComponent(cont) : "")).then(function (r) { return r.json(); }).then(function (j) {
+        ((j.query || {}).categorymembers || []).forEach(function (m) { titles.push(m.title); });
+        if (j["continue"] && j["continue"].cmcontinue && depth < 5) return page(j["continue"].cmcontinue, depth + 1);
+      });
+    })(null, 0).then(function () {
+      questsLoading = false;
+      if (!titles.length) { status.quests = "the wiki's quest list came back empty"; return; }
+      quests = {}; titles.forEach(function (t) { quests[nk(t)] = t; });
+      store.set("bankwise.quests.v1", JSON.stringify({ at: Date.now(), t: titles }));
+      status.quests = titles.length + " quests"; changed();
+    }).catch(function (e) { questsLoading = false; status.quests = "quest list unavailable - " + e.message; });
+  }
+  /* -> [quest titles] (possibly empty), or null while it is still being worked out */
+  function questsFor(name) {
+    var k = key(name), f = facts[k];
+    if (!f) { factsFor(name); return null; }
+    if (f.quests) return f.quests;
+    if (!quests) { loadQuests(); return null; }
+    var byCat = (f.cats || []).filter(function (c) { return quests[nk(c)]; }).map(function (c) { return quests[nk(c)]; });
+    if (byCat.length || f.missing) { f.quests = byCat; saveFacts(); return byCat; }
+    if (questPending[k]) return null;
+    questPending[k] = 1;
+    fetch(WIKI_API + "?action=query&format=json&origin=*&redirects=1&prop=links&plnamespace=0&pllimit=max&titles=" + encodeURIComponent(f.title || name)).then(function (r) { return r.json(); }).then(function (j) {
+      var pages = j && j.query && j.query.pages || {}, out = [], id;
+      for (id in pages) (pages[id].links || []).forEach(function (l) { var q = quests[nk(l.title)]; if (q && out.indexOf(q) < 0) out.push(q); });
+      f.quests = out; saveFacts(); delete questPending[k]; changed();
+    }).catch(function () { delete questPending[k]; });
+    return null;
+  }
+
+  /* ---------- gear tier (for "you have outgrown this") ---------- */
+  /* read from the item page's own text: the combat-stats box carries tier, class and slot */
+  var gearQueue = [], gearPending = {}, gearTimer = null;
+  function parseGear(text) {
+    var t = /\|\s*tier\d*\s*=\s*(\d+)/i.exec(text || ""), c = /\|\s*class\d*\s*=\s*([A-Za-z]+)/i.exec(text || ""), s = /\|\s*slot\d*\s*=\s*([A-Za-z0-9 -]+)/i.exec(text || "");
+    return t ? { tier: +t[1], cls: c ? c[1].toLowerCase() : "", slot: s ? s[1].trim().toLowerCase() : "" } : { tier: 0 };
+  }
+  /* -> {tier, cls, slot} (tier 0 = the page gives none), or null while it is being fetched */
+  function gearFor(name) {
+    var k = key(name), f = facts[k];
+    if (f && f.gear) return f.gear;
+    if (!f || f.missing) { if (!f) factsFor(name); return null; }
+    if (!gearPending[k]) { gearPending[k] = 1; gearQueue.push(name); if (!gearTimer) gearTimer = setTimeout(flushGear, 600); }
+    return null;
+  }
+  function flushGear() {
+    gearTimer = null;
+    var batch = gearQueue.splice(0, 8);
+    if (!batch.length) return;
+    fetch(WIKI_API + "?action=query&format=json&origin=*&redirects=1&prop=revisions&rvprop=content&rvslots=main&titles=" + encodeURIComponent(batch.join("|"))).then(function (r) { return r.json(); }).then(function (j) {
+      var q = j && j.query || {}, back = {}, id;
+      (q.normalized || []).concat(q.redirects || []).forEach(function (r) { back[r.to] = back[r.from] || r.from; });
+      for (id in (q.pages || {})) {
+        var pg = q.pages[id], from = pg.title, guard = 0, rev = pg.revisions && pg.revisions[0];
+        while (back[from] && guard++ < 4) from = back[from];
+        var text = rev && (rev.slots && rev.slots.main ? (rev.slots.main["*"] !== undefined ? rev.slots.main["*"] : rev.slots.main.content) : rev["*"]);
+        if (facts[key(from)]) facts[key(from)].gear = parseGear(text);
+      }
+      batch.forEach(function (n) { var k = key(n); delete gearPending[k]; if (facts[k] && !facts[k].gear) facts[k].gear = { tier: 0 }; });
+      saveFacts(); changed();
+      if (gearQueue.length) gearTimer = setTimeout(flushGear, 1200);
+    }).catch(function (e) { batch.forEach(function (n) { delete gearPending[key(n)]; }); status.lastError = "gear tiers: " + e.message; });
+  }
+
+  /* the opening of the wiki page, cut to a couple of sentences that fit the card */
+  function tidyBlurb(t) {
+    t = String(t || "").replace(/\s+/g, " ").replace(/\s*\([^)]{0,40}\bpronounced\b[^)]*\)/i, "").trim();
+    if (t.length <= 260) return t;
+    var cut = t.slice(0, 260), stop = Math.max(cut.lastIndexOf(". "), cut.lastIndexOf("! "));
+    return stop > 80 ? cut.slice(0, stop + 1) : cut.replace(/\s+\S*$/, "") + "...";
   }
   function has(f, re) { return !!(f && f.cats && f.cats.some(function (c) { return re.test(c); })); }
 
@@ -210,12 +296,14 @@
       known: !!(f && !f.missing), cats: f ? f.cats : [],
       diango: has(f, /diango/i),
       questItem: has(f, /^quest items?$/i) || has(f, /quest items/i),
+      blurb: f && f.blurb || "",
       wikiTitle: f && f.title || name
     };
   }
 
   loadFacts();
   return {
+    questsFor: questsFor, gearFor: gearFor, _parseGear: parseGear, wikiUrl: function (title) { return "https://runescape.wiki/w/" + encodeURIComponent(String(title || "").replace(/ /g, "_")).replace(/%2F/g, "/").replace(/%3A/g, ":"); },
     loadPrices: loadPrices, selfTest: selfTest, resolveName: resolveName, _variants: variants, price: price, pricesLoaded: pricesLoaded, factsFor: factsFor, describe: describe, status: status,
     onChange: function (f) { listeners.push(f); }, key: key,
     clearCache: function () { facts = {}; saveFacts(); prices = null; pricesAt = 0; store.set("bankwise.prices.v1", "null"); },

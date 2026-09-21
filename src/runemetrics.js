@@ -1,14 +1,19 @@
 /* Optional: the player's skill levels and quest log from RuneMetrics, by username.
 
-   RuneMetrics answers only for profiles set to public.  Browsers may refuse the plain
-   request (no cross-origin header), so each lookup is tried as fetch first and as JSONP
-   second; if both fail the settings panel offers pasting the JSON instead. */
+   Jagex's player APIs send no cross-origin header, so a web page cannot read them directly.
+   Lookups go through a small Cloudflare Worker that only relays them (the same one the
+   DailyScape Advisor uses; source in that repo, worker/dailyscape-proxy.worker.js):
+     /profile  RuneMetrics profile - skill levels; fails when the profile is private
+     /hiscores the hiscores table   - skill levels even for a private profile
+     /quests   RuneMetrics quests   - empty when the profile is private
+   The direct request and JSONP are still tried afterwards, and pasting the JSON is the last resort. */
 (function (root, factory) {
   if (typeof module === "object" && module.exports) module.exports = factory();
   else root.RuneMetrics = factory();
 })(this, function () {
   "use strict";
   var BASE = "https://apps.runescape.com/runemetrics/";
+  var PROXY = "https://dailyscape-proxy.scott-cardone.workers.dev";
   function norm(s) { return String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim(); }
 
   function jsonp(url) {
@@ -24,6 +29,17 @@
   }
   function get(url) {
     return fetch(url).then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); }).catch(function () { return jsonp(url); });
+  }
+  /* through the worker first; whatever it answers (even an error object) is an answer */
+  function viaProxy(path, direct) {
+    return fetch(PROXY + path).then(function (r) { return r.json(); }).catch(function () { return get(direct); });
+  }
+  /* hiscores index_lite: one "rank,level,xp" line per skill, Overall first, then the skills in RuneMetrics id order */
+  function parseHiscores(text) {
+    var rows = String(text || "").trim().split(/\r?\n/), levels = [], i;
+    for (i = 1; i <= 29 && i < rows.length; i++) { var c = rows[i].split(","); if (c.length < 2 || isNaN(+c[1])) break; levels[i - 1] = Math.max(1, +c[1]); }
+    if (levels.length < 20) throw new Error("the hiscores answer was not a skill table");
+    return levels;
   }
 
   function parseProfile(j) {
@@ -43,9 +59,13 @@
   function lookup(user) {
     var u = encodeURIComponent(String(user || "").trim()), out = { name: user, levels: null, quests: null, at: Date.now(), notes: [] };
     if (!u) return Promise.reject(new Error("type a username first"));
-    return get(BASE + "profile/profile?user=" + u + "&activities=0").then(function (j) { var p = parseProfile(j); out.levels = p.levels; if (p.name) out.name = p.name; })
-      .catch(function (e) { out.notes.push("skills: " + e.message); })
-      .then(function () { return get(BASE + "quests?user=" + u); }).then(function (j) { out.quests = parseQuests(j); })
+    return viaProxy("/profile?user=" + u, BASE + "profile/profile?user=" + u + "&activities=0").then(function (j) { var p = parseProfile(j); out.levels = p.levels; if (p.name) out.name = p.name; })
+      .catch(function (e) {
+        /* a private profile still has public hiscores */
+        return fetch(PROXY + "/hiscores?user=" + u).then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); }).then(function (t) { out.levels = parseHiscores(t); })
+          .catch(function () { out.notes.push("skills: " + e.message); });
+      })
+      .then(function () { return viaProxy("/quests?user=" + u, BASE + "quests?user=" + u); }).then(function (j) { out.quests = parseQuests(j); })
       .catch(function (e) { out.notes.push("quests: " + e.message); })
       .then(function () { if (!out.levels && !out.quests) throw new Error(out.notes.join("; ")); return out; });
   }
@@ -56,5 +76,5 @@
     out.at = Date.now();
     return out;
   }
-  return { lookup: lookup, fromPaste: fromPaste, parseProfile: parseProfile, parseQuests: parseQuests, urls: function (user) { var u = encodeURIComponent(String(user || "").trim()); return [BASE + "profile/profile?user=" + u + "&activities=0", BASE + "quests?user=" + u]; } };
+  return { lookup: lookup, fromPaste: fromPaste, parseHiscores: parseHiscores, PROXY: PROXY, parseProfile: parseProfile, parseQuests: parseQuests, urls: function (user) { var u = encodeURIComponent(String(user || "").trim()); return [BASE + "profile/profile?user=" + u + "&activities=0", BASE + "quests?user=" + u]; } };
 });
