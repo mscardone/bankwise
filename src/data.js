@@ -209,21 +209,27 @@
      and failing that the quests its wiki page links to */
   var quests = null, questsLoading = false, questPending = {};
   function nk(s) { return String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim(); }
+  /* Category:Quests also holds pages ABOUT quests ("Quests", "List of quests", "Quest points", guides as subpages);
+     nearly every item page links to those, so they must never count as a quest an item is needed for */
+  function isQuestTitle(t) {
+    t = String(t || "");
+    return !!t && t.indexOf("/") < 0 && t.indexOf(":") < 0 && !/^(the )?(mini)?quests?$|^(list|lists) of |^quest (points?|list|series|cape|experience|item|rewards?|journal|guides?|help)\b|\bquests$|^(optimal|recommended) quest|^quests? /i.test(t);
+  }
   function loadQuests() {
     if (quests || questsLoading) return;
-    try { var c = JSON.parse(store.get("bankwise.quests.v1") || "null"); if (c && c.t && c.t.length > 50 && Date.now() - c.at < 30 * DAY) { quests = {}; c.t.forEach(function (t) { quests[nk(t)] = t; }); return; } } catch (e) { /* refetch */ }
+    try { var c = JSON.parse(store.get("bankwise.quests.v2") || "null"); if (c && c.t && c.t.length > 50 && Date.now() - c.at < 30 * DAY) { quests = {}; c.t.filter(isQuestTitle).forEach(function (t) { quests[nk(t)] = t; }); return; } } catch (e) { /* refetch */ }
     questsLoading = true;
     var titles = [], base = WIKI_API + "?action=query&format=json&origin=*&list=categorymembers&cmtitle=Category:Quests&cmnamespace=0&cmlimit=500";
     (function page(cont, depth) {
       return fetch(base + (cont ? "&cmcontinue=" + encodeURIComponent(cont) : "")).then(function (r) { return r.json(); }).then(function (j) {
-        ((j.query || {}).categorymembers || []).forEach(function (m) { titles.push(m.title); });
+        ((j.query || {}).categorymembers || []).forEach(function (m) { if (isQuestTitle(m.title)) titles.push(m.title); });
         if (j["continue"] && j["continue"].cmcontinue && depth < 5) return page(j["continue"].cmcontinue, depth + 1);
       });
     })(null, 0).then(function () {
       questsLoading = false;
       if (!titles.length) { status.quests = "the wiki's quest list came back empty"; return; }
       quests = {}; titles.forEach(function (t) { quests[nk(t)] = t; });
-      store.set("bankwise.quests.v1", JSON.stringify({ at: Date.now(), t: titles }));
+      store.set("bankwise.quests.v2", JSON.stringify({ at: Date.now(), t: titles }));
       status.quests = titles.length + " quests"; changed();
     }).catch(function (e) { questsLoading = false; status.quests = "quest list unavailable - " + e.message; });
   }
@@ -235,8 +241,8 @@
   function questsFor(name) {
     var k = key(name), f = facts[k];
     if (!f) { factsFor(name); return null; }
-    if (f.quests && f.qv === 2) return f.quests;
-    if (f.missing) { f.quests = []; f.qv = 2; return f.quests; }
+    if (f.quests && f.qv === 3) return f.quests;
+    if (f.missing) { f.quests = []; f.qv = 3; return f.quests; }
     if (!quests) { loadQuests(); return null; }
     if (!questPending[k]) { questPending[k] = 1; questQueue.push(name); if (!questTimer) questTimer = setTimeout(flushQuests, 500); }
     return null;
@@ -265,7 +271,7 @@
         if (!f) return;
         var byCat = (f.cats || []).map(questTitle).filter(Boolean), linked = found[f.title || n] || [], out = byCat.slice();
         linked.forEach(function (q) { if (out.indexOf(q) < 0) out.push(q); });
-        f.quests = out; f.qv = 2; f.questCat = byCat.length > 0;
+        f.quests = out; f.qv = 3; f.questCat = byCat.length > 0;
       });
       saveFacts(); changed();
       if (questQueue.length) questTimer = setTimeout(flushQuests, 1000);
@@ -388,7 +394,7 @@
 
   loadFacts();
   return {
-    questsFor: questsFor, gearFor: gearFor, _parseGear: parseGear, wikiUrl: function (title) { return "https://runescape.wiki/w/" + encodeURIComponent(String(title || "").replace(/ /g, "_")).replace(/%2F/g, "/").replace(/%3A/g, ":").replace(/%2C/g, ","); },
+    questsFor: questsFor, _isQuestTitle: isQuestTitle, gearFor: gearFor, _parseGear: parseGear, wikiUrl: function (title) { return "https://runescape.wiki/w/" + encodeURIComponent(String(title || "").replace(/ /g, "_")).replace(/%2F/g, "/").replace(/%3A/g, ":").replace(/%2C/g, ","); },
     loadPrices: loadPrices, selfTest: selfTest, resolveName: resolveName, _variants: variants, price: price, pricesLoaded: pricesLoaded, factsFor: factsFor, describe: describe, status: status,
     onChange: function (f) { listeners.push(f); }, key: key,
     clearCache: function () { facts = {}; saveFacts(); prices = null; pricesAt = 0; store.set("bankwise.prices.v1", "null"); },

@@ -47,7 +47,7 @@
     clue: "Clues", quest: "Quest items", holiday: "Holiday & cosmetic", currency: "Currency & tokens", teleport: "Teleports", runes: "Runes & runecrafting", ammo: "Ammunition",
     potion: "Potions", herblore: "Herblore supplies", food: "Food & cooking", summoning: "Summoning", prayer: "Bones & ashes", seeds: "Farming", wood: "Logs, planks & fletching",
     metal: "Ores & bars", gems: "Gems & crafting", hides: "Hides & leather", invention: "Invention", divination: "Divination", archaeology: "Archaeology", slayer: "Slayer",
-    keepsake: "Quest rewards & keepsakes", outfit: "Skilling outfits & capes", tools: "Tools", jewellery: "Jewellery & pocket", weapon: "Weapons", armour: "Armour", keys: "Keys, lamps & boosts", misc: "Everything else"
+    keepsake: "Quest rewards & keepsakes", minigame: "Minigame & D&D items", outfit: "Skilling outfits & capes", tools: "Tools", jewellery: "Jewellery & pocket", weapon: "Weapons", armour: "Armour", keys: "Keys, lamps & boosts", misc: "Everything else"
   };
   /* kinds that are used up by playing: a low unit price does not make these junk */
   var SUPPLY = { runes: 1, ammo: 1, potion: 1, herblore: 1, food: 1, summoning: 1, prayer: 1, seeds: 1, wood: 1, metal: 1, gems: 1, hides: 1, invention: 1, divination: 1, archaeology: 1, teleport: 1, currency: 1 };
@@ -57,6 +57,14 @@
   /* a name that says "sword" or "amulet" is still a quest item when the wiki files it under quest items;
      things that are plainly supplies keep their own kind whatever else they are */
   var QUEST_YIELDS_TO = { clue: 1, currency: 1, teleport: 1, runes: 1, ammo: 1, potion: 1, seeds: 1, herblore: 1, food: 1, prayer: 1, wood: 1, metal: 1, gems: 1, hides: 1 };
+  /* minigames and D&Ds, by name: a wiki category or an opening sentence that names one marks the item as theirs */
+  var MINIGAME = new RegExp("minigame|distractions? and diversions?|\\bD&Ds?\\b|" + ["Fishing Trawler", "Castle Wars", "Pest Control", "Barbarian Assault", "Soul Wars", "Fist of Guthix", "Stealing Creation", "Temple Trekking", "Burgh de Rott Ramble",
+    "Trouble Brewing", "Mobilising Armies", "Great Orb Project", "Pyramid Plunder", "Sorceress's Garden", "Gnome Restaurant", "Gnome Ball", "Tai Bwo Wannai Cleanup", "Shades of Mort'ton", "Rat Pits", "Flash Powder Factory", "Heist",
+    "Cabbage Facepunch Bonanza", "Conquest", "Fight Kiln", "Fight Caves?", "Fight Pits?", "Dominion Tower", "Big Chinchompa", "Guthixian Caches?", "Evil Trees?", "Shooting Stars?", "Penguin Hide and Seek", "Court Cases", "Balthazar Beauregard's Big Top Bonanza",
+    "Champions' Challenge", "Familiarisation", "Fish Flingers", "Troll Invasion", "Sinkholes?", "Phoenix Lair", "Wilderness Warbands", "Player-owned ports?", "Herby Werby", "Agoroth", "Vinesweeper", "Livid Farm", "Brimhaven Agility Arena",
+    "Mage Training Arena", "Duel Arena", "Clan Wars", "Deathmatch", "Werewolf Agility", "Rogues' Den"].join("|"), "i");
+  function minigameIn(text) { var m = MINIGAME.exec(String(text || "")); return m ? m[0] : ""; }
+
   /* something that cannot be traded is not a skilling supply whatever its name says ("Silver sickle (b)" is not silver to craft with) */
   var QUEST_YIELDS_TO_UNTRADEABLE = { clue: 1, currency: 1, teleport: 1, runes: 1, potion: 1, food: 1 };
   function kindOf(name, cats, untradeable) {
@@ -75,6 +83,9 @@
       if (reward && !reclaim) return "keepsake";
       if (byName) for (j = 0; j < cats.length; j++) if (/^quest items$/i.test(cats[j])) return "quest";
     }
+    /* something whose wiki page puts it in a minigame or a Distraction and Diversion belongs with those, not with the
+       tools or armour it happens to be named like; real supplies (runes, food, logs...) stay what they are */
+    if (!byName || !QUEST_YIELDS_TO[byName]) for (j = 0; j < cats.length; j++) if (MINIGAME.test(cats[j])) return "minigame";
     if (byName) return byName;
     for (i = 0; i < RULES.length; i++) {
       r = RULES[i];
@@ -87,19 +98,19 @@
   var TEMPLATES = [
     { id: "five", name: "Five-tab essentials", blurb: "The layout most guides agree on: an inbox, gear, combat supplies, skilling, and things to sell.",
       tabs: [["Inbox (sort me)", ["misc"]], ["Gear", ["weapon", "armour", "jewellery", "ammo", "runes", "teleport", "slayer"]], ["Combat supplies", ["potion", "food", "summoning", "prayer", "herblore"]],
-        ["Skilling", ["tools", "outfit", "wood", "metal", "gems", "hides", "seeds", "invention", "divination", "archaeology"]], ["Loot, quest & keepsakes", ["clue", "quest", "holiday", "keepsake", "currency", "keys"]]] },
+        ["Skilling", ["tools", "outfit", "wood", "metal", "gems", "hides", "seeds", "invention", "divination", "archaeology"]], ["Loot, quest & keepsakes", ["clue", "quest", "holiday", "keepsake", "currency", "keys", "minigame"]]] },
     { id: "pvm", name: "PvM-focused", blurb: "Gear split by what you grab before a boss; skilling squeezed into two tabs.",
       tabs: [["Inbox (sort me)", ["misc"]], ["Weapons & ammo", ["weapon", "ammo", "runes"]], ["Armour", ["armour"]], ["Jewellery & teleports", ["jewellery", "teleport"]],
         ["Potions & food", ["potion", "food", "prayer"]], ["Familiars & Slayer", ["summoning", "slayer"]], ["Skilling supplies", ["herblore", "wood", "metal", "gems", "hides", "seeds", "invention", "divination", "archaeology"]],
-        ["Tools & outfits", ["tools", "outfit"]], ["Loot, clues & keepsakes", ["clue", "quest", "holiday", "keepsake", "currency", "keys"]]] },
+        ["Tools & outfits", ["tools", "outfit"]], ["Loot, clues & keepsakes", ["clue", "quest", "holiday", "keepsake", "currency", "keys", "minigame"]]] },
     { id: "skiller", name: "Skiller", blurb: "One tab per family of skills; combat gear kept together out of the way.",
       tabs: [["Inbox (sort me)", ["misc"]], ["Tools, outfits & teleports", ["tools", "outfit", "teleport", "jewellery"]], ["Gathering: wood & metal", ["wood", "metal"]], ["Herblore & Farming", ["herblore", "seeds", "potion"]],
         ["Cooking & Prayer", ["food", "prayer"]], ["Crafting & Runecrafting", ["gems", "hides", "runes"]], ["Invention, Divination & Archaeology", ["invention", "divination", "archaeology"]],
-        ["Combat gear", ["weapon", "armour", "ammo", "summoning", "slayer"]], ["Clues, quest & keepsakes", ["clue", "quest", "holiday", "keepsake", "currency", "keys"]]] },
+        ["Combat gear", ["weapon", "armour", "ammo", "summoning", "slayer"]], ["Clues, quest & keepsakes", ["clue", "quest", "holiday", "keepsake", "currency", "keys", "minigame"]]] },
     { id: "granular", name: "Granular (14 tabs)", blurb: "Nearly one tab per kind, for big banks where five tabs become a wall of icons.",
       tabs: [["Inbox (sort me)", ["misc"]], ["Weapons", ["weapon"]], ["Armour", ["armour"]], ["Jewellery & teleports", ["jewellery", "teleport"]], ["Ammo & runes", ["ammo", "runes"]], ["Potions & herblore", ["potion", "herblore"]],
         ["Food, bones & ashes", ["food", "prayer"]], ["Summoning & Slayer", ["summoning", "slayer"]], ["Wood & fletching", ["wood"]], ["Ores, bars, gems & hides", ["metal", "gems", "hides"]], ["Farming", ["seeds"]],
-        ["Invention, Divination & Archaeology", ["invention", "divination", "archaeology"]], ["Tools & outfits", ["tools", "outfit"]], ["Clues, quest, currency & keepsakes", ["clue", "quest", "holiday", "keepsake", "currency", "keys"]]] },
+        ["Invention, Divination & Archaeology", ["invention", "divination", "archaeology"]], ["Tools & outfits", ["tools", "outfit"]], ["Clues, quest, currency & keepsakes", ["clue", "quest", "holiday", "keepsake", "currency", "keys", "minigame"]]] },
     /* Scott's own bank.  The kinds are coarser than his tabs (one "weapon" kind, ores and bars together), so a few
        name rules run before the kind -> tab table: [kinds the rule applies to, name pattern, tab index]. */
     { id: "geech", name: "Geech Layout", blurb: "How Geech keeps his bank: combat and magic apart, skills split into gathering and making, and a tab each for D&Ds, quests and keepsakes.",
@@ -108,7 +119,7 @@
         ["Magic", ["runes", "teleport", "potion", "jewellery"], "Runes, runecrafting items, teleports, jewellery, potions, magic armour and weapons"],
         ["Gathering Skills", ["metal", "wood", "seeds", "archaeology", "divination", "tools", "outfit"], "Mining, Woodcutting, Farming, Archaeology, Hunter, Fishing, Divination"],
         ["Crafting Skills", ["gems", "hides", "herblore", "invention"], "Crafting, Fletching, Construction, Smithing, Cooking, Herblore, Invention"],
-        ["D&D, Minigames, Tokens", ["clue", "currency", "keys"], "Clues, D&D and minigame rewards, tokens, keys, lamps and stars, and charges for other items (artisanal gears, silverhawk feathers)"],
+        ["D&D, Minigames, Tokens", ["clue", "currency", "keys", "minigame"], "Clues, D&D and minigame rewards, tokens, keys, lamps and stars, and charges for other items (artisanal gears, silverhawk feathers)"],
         ["Quest Items", ["quest"], "Quest items"],
         ["Keepsakes, Cosmetics, and Seasonal", ["holiday", "keepsake"], "Seasonal, discontinued and cosmetic items, and quest rewards that cannot be reclaimed"]],
       rules: [
@@ -174,5 +185,5 @@
   var UPGRADEABLE = /deathwarden|deathdealer|death guard|skull lantern|first necromancer|masterwork|\(tier \d+\)|\+ ?\d$/i;
   function upgradeable(name) { return UPGRADEABLE.test(String(name || "")); }
 
-  return { teleportsTo: teleportsTo, upgradeable: upgradeable, kindOf: kindOf, tabFor: tabFor, template: template, TEMPLATES: TEMPLATES, KIND_LABEL: KIND_LABEL, SUPPLY: SUPPLY, TRAINS: TRAINS, RULES: RULES };
+  return { minigameIn: minigameIn, teleportsTo: teleportsTo, upgradeable: upgradeable, kindOf: kindOf, tabFor: tabFor, template: template, TEMPLATES: TEMPLATES, KIND_LABEL: KIND_LABEL, SUPPLY: SUPPLY, TRAINS: TRAINS, RULES: RULES };
 });
