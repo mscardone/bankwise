@@ -8,7 +8,7 @@ An [Alt1 Toolkit](https://runeapps.org/alt1) app for RuneScape 3 that reads your
 
 It only reads the screen and draws markers. It never clicks, types or moves anything in the game.
 
-> **Status: v0.8.11.** Bank reading, item matching and tooltip reading are tested on real Alt1
+> **Status: v0.8.12.** Bank reading, item matching and tooltip reading are tested on real Alt1
 > captures (items match pixel-for-pixel between captures). The wiki lookups and the RuneMetrics
 > lookup have not worked live yet. See "Not proven yet" below.
 
@@ -47,6 +47,7 @@ The app needs the **pixel**, **overlay** and **game state** permissions (game st
   - *my own pins* - mark any item always-keep or always-junk.
 - **RuneMetrics** - type your name and press *Look up* to fetch skills and quests (your profile must be public). If the lookup is blocked, the panel shows the two addresses to open and a box to paste the result into.
 - **Overlay** - every part of the overlay has its own tick-box: the colour bars (with your own hex colours and gp cutoffs), the stack value (own colour, optional minimum total, single items or not), each advice letter (J, D, Q, K, and an optional ? for "check before destroying"), and each kind of box. *Overlay back to defaults* undoes it all.
+- **Tab corrections** - pick a different tab on any item's card when the app gets it wrong; the choice is kept for that layout. *Export tab corrections* writes a file listing each correction with what the app knew about the item, for improving the sorting rules.
 - **Item library** - export / import / forget. An exported library can be given to someone else so they start with your items already known.
 
 ## How it works

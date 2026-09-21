@@ -2,7 +2,7 @@
    draws value/verdict markers over the game and explains each verdict. */
 (function () {
   "use strict";
-  var VERSION = "0.8.11";
+  var VERSION = "0.8.12";
   var READ_MS = 700, HOVER_MS = 250, OVERLAY_MS = 2500, OVERLAY_GROUP = "bankwise";
   function $(id) { return document.getElementById(id); }
   var store = {
@@ -11,7 +11,7 @@
   };
   function loadJSON(k, fallback) { try { var v = JSON.parse(store.get(k) || "null"); return v === null || v === undefined ? fallback : v; } catch (e) { return fallback; } }
 
-  var DEFAULTS = { template: "five", junkBelow: 500, useQuests: false, useSkills: false, goalLevel: 99, useOverrides: false, overrides: {}, overlay: true, rmUser: "", teach: true };
+  var DEFAULTS = { template: "five", junkBelow: 500, useQuests: false, useSkills: false, goalLevel: 99, useOverrides: false, overrides: {}, overlay: true, rmUser: "", teach: true, tabPins: {} };
   /* everything the overlay draws can be switched off, and the value colours and cutoffs are the player's to change */
   var OV_DEFAULTS = {
     showTiers: true, tiers: [{ min: 1000, color: "#4ea56a" }, { min: 10000, color: "#45b5c4" }, { min: 100000, color: "#6f9bff" }, { min: 1000000, color: "#b07cff" }, { min: 10000000, color: "#f0c040" }],
@@ -140,7 +140,10 @@
     }
     it.kind = Kinds.kindOf(name, it.cats, it.tradeable === false);
     it.questSure = wikiSaysQuest;      /* the wiki's own quest-item category, not our reading of links or text */
-    it.tab = Kinds.tabFor(it.kind, settings.template, name);
+    it.tab = it.appTab = Kinds.tabFor(it.kind, settings.template, name);
+    /* the player's own choice of tab wins; it is kept per layout */
+    var pins = settings.tabPins[settings.template], pinTab = pins && pins[Verdict.norm(name)], tpl = Kinds.template(settings.template);
+    if (pinTab !== undefined && tpl.tabs[pinTab]) { it.tab = { index: pinTab, number: pinTab + 1, name: tpl.tabs[pinTab][0] }; it.tabPinned = true; }
     it.upgradeable = Kinds.upgradeable(name);
     /* the item page's own text (stats, shop value, alchable) is only fetched when it can matter:
        for the card of a piece of gear, for the outgrown-gear rule, and before telling anyone to destroy something */
@@ -395,7 +398,7 @@
   function renderCard() {
     var s = shown && shown.slot, live = s && view && view.slots.indexOf(s) >= 0;
     if (s && !live && view) { var pk = posKey(s); s = null; view.slots.forEach(function (q) { if (posKey(q) === pk) s = q; }); if (s) shown.slot = s; }
-    if (!s) { $("hicon").style.backgroundImage = ""; $("hname").textContent = view ? "Hover an item" : "Open your bank"; $("hprice").innerHTML = "&nbsp;"; $("halch").innerHTML = "&nbsp;"; $("hblurb").innerHTML = "&nbsp;"; $("hstats").innerHTML = "&nbsp;"; $("hquests").innerHTML = "&nbsp;"; $("hwiki").style.display = "none"; $("hverdict").innerHTML = view ? "Hover an item in the bank, or a row below, to see what it is worth, where it belongs and whether to keep it." : "&nbsp;"; $("htab").innerHTML = "&nbsp;"; $("hpins").style.display = settings.useOverrides ? "" : "none"; $("hpins").style.visibility = "hidden"; $("hfix").style.visibility = "hidden"; return; }
+    if (!s) { $("hicon").style.backgroundImage = ""; $("hname").textContent = view ? "Hover an item" : "Open your bank"; $("hprice").innerHTML = "&nbsp;"; $("halch").innerHTML = "&nbsp;"; $("hblurb").innerHTML = "&nbsp;"; $("hstats").innerHTML = "&nbsp;"; $("hquests").innerHTML = "&nbsp;"; $("hwiki").style.display = "none"; $("hverdict").innerHTML = view ? "Hover an item in the bank, or a row below, to see what it is worth, where it belongs and whether to keep it." : "&nbsp;"; $("htab").innerHTML = "&nbsp;"; $("hpins").style.display = settings.useOverrides ? "" : "none"; $("hpins").style.visibility = "hidden"; $("hfix").style.visibility = "hidden"; $("tabpickrow").style.display = "none"; return; }
     $("hicon").style.backgroundImage = "url(" + slotImg(s) + ")";
     $("hfix").style.visibility = ""; $("hpins").style.display = settings.useOverrides ? "" : "none";
     if (!named(s)) {
@@ -404,7 +407,7 @@
       $("hprice").innerHTML = hoverSlot === s && settings.teach ? (tipName ? "reading: <b>" + esc(tipName) + "</b>" : "keep the mouse still until the game shows its name") : "&nbsp;";
       $("halch").innerHTML = "&nbsp;"; $("hblurb").innerHTML = "&nbsp;"; $("hstats").innerHTML = "&nbsp;"; $("hquests").innerHTML = "&nbsp;"; $("hwiki").style.display = "none";
       $("hverdict").innerHTML = '<span class="chip ' + (s.id.state === "unsure" ? "unsure" : "teach") + '">' + (s.id.state === "unsure" ? "unsure" : "new") + "</span>" + (s.id.state === "unsure" ? "Looks like " + esc(s.id.name) + (s.id.rival ? " or " + esc(s.id.rival) : "") + ". Hover it in the bank to confirm." : (settings.teach ? "Hover it in the bank and I will remember it from then on." : "Teach is off. Tick teach at the top, then hover it, and I will remember it."));
-      $("htab").innerHTML = "&nbsp;"; $("hpins").style.visibility = "hidden";
+      $("htab").innerHTML = "&nbsp;"; $("hpins").style.visibility = "hidden"; $("tabpickrow").style.display = "none";
       return;
     }
     var it = info(s.id.name, true);
@@ -452,7 +455,16 @@
     $("hverdict").innerHTML = '<span class="chip ' + it.verdict.id + '">' + Verdict.LABEL[it.verdict.id] + "</span>" + (it.upgradeable ? '<span class="chip review">upgradeable</span>' : "") + esc(it.verdict.reason) +
       (s.id.state === "guess" ? " <span class='qty'>Recognised from the wiki's icon" + (s.id.alts && s.id.alts.length ? " (could also be " + esc(s.id.alts.join(", ")) + ")" : "") + "; hovering it in the bank settles it.</span>" : "") +
       (s.id.state === "twin" ? " <span class='twin'>Same icon as " + esc(s.id.twins.filter(function (n) { return n !== it.name; }).join(", ")) + " - showing the one you last hovered.</span>" : "");
-    $("htab").innerHTML = "Belongs in <b>tab " + it.tab.number + " &middot; " + esc(it.tab.name) + "</b> <span title='" + esc(it.cats.slice(0, 12).join(", ")) + "'>(" + esc(Kinds.KIND_LABEL[it.kind]) + ")</span>";
+    $("htab").innerHTML = "Belongs in <b>tab " + it.tab.number + " &middot; " + esc(it.tab.name) + "</b> <span title='" + esc(it.cats.slice(0, 12).join(", ")) + "'>(" + esc(Kinds.KIND_LABEL[it.kind]) + ")</span>" + (it.tabPinned ? " <span class='qty'>your choice; the app said tab " + it.appTab.number + "</span>" : "");
+    /* the tab picker: rebuilt only when the item changes, so it is usable while the card refreshes under the mouse */
+    var pick = $("tabpick");
+    if (pick._for !== it.name + "|" + settings.template + "|" + it.appTab.number) {
+      pick._for = it.name + "|" + settings.template + "|" + it.appTab.number;
+      var tpl2 = Kinds.template(settings.template);
+      pick.innerHTML = '<option value="">app\'s choice: tab ' + it.appTab.number + "</option>" + tpl2.tabs.map(function (t, i) { return '<option value="' + i + '">tab ' + (i + 1) + " \u00b7 " + esc(t[0]) + "</option>"; }).join("");
+      pick.value = it.tabPinned ? String(it.tab.index) : "";
+    }
+    $("tabpickrow").style.display = "";
     $("hpins").style.visibility = "";
     var pin = settings.overrides[Verdict.norm(it.name)] || "";
     Array.prototype.forEach.call($("hpins").querySelectorAll("button"), function (b) { b.className = b.getAttribute("data-pin") === pin && pin ? "on" : ""; });
@@ -483,7 +495,7 @@
     $("template").value = settings.template; $("junkbelow").value = settings.junkBelow; $("goallevel").value = settings.goalLevel;
     $("usequests").checked = settings.useQuests; $("useskills").checked = settings.useSkills; $("useoverrides").checked = settings.useOverrides;
     $("overlay").checked = settings.overlay; $("teach").checked = settings.teach; $("rmuser").value = settings.rmUser;
-    renderTemplate(); renderLibStatus(); renderProfile(); renderWikiStatus(); renderOverlaySettings(); applyOverlayLook();
+    renderTemplate(); renderLibStatus(); renderProfile(); renderWikiStatus(); renderOverlaySettings(); applyOverlayLook(); renderCorrectionsStatus();
   }
   /* ----- overlay settings ----- */
   function applyOverlayLook() {
@@ -621,6 +633,35 @@
     e.preventDefault();
     var url = el.getAttribute("data-url");
     try { if (window.alt1 && alt1.openBrowser) alt1.openBrowser(url); else window.open(url, "_blank"); } catch (err) { window.open(url, "_blank"); }
+  });
+  $("tabpick").addEventListener("change", function () {
+    var s = shown && shown.slot; if (!s || !named(s)) return;
+    var k = Verdict.norm(s.id.name), pins = settings.tabPins[settings.template] || (settings.tabPins[settings.template] = {});
+    if (this.value === "") delete pins[k]; else pins[k] = +this.value;
+    $("tabpick")._for = ""; changed(); renderCorrectionsStatus();
+  });
+  /* the corrections, with everything the app knew about each item, so the classifier can be fixed from them */
+  function correctionsReport() {
+    var out = [], tid, k;
+    for (tid in settings.tabPins) {
+      var tpl = Kinds.template(tid), pins = settings.tabPins[tid];
+      for (k in pins) {
+        var name = pinName(k), it = Data.describe(name), kind = Kinds.kindOf(name, it.cats, it.tradeable === false), app = Kinds.tabFor(kind, tid, name);
+        out.push({ name: name, layout: tpl.name, yourTab: pins[k] + 1, yourTabName: tpl.tabs[pins[k]] ? tpl.tabs[pins[k]][0] : "?", appTab: app.number, appTabName: app.name, appKind: kind, kindLabel: Kinds.KIND_LABEL[kind],
+          tradeable: it.tradeable, questItem: it.questItem, diango: it.diango, quests: Data.questsFor(name) || [], wikiCategories: it.cats, wikiIntro: String(it.blurb || "").slice(0, 240), wikiTitle: it.wikiTitle });
+      }
+    }
+    return { v: 1, app: VERSION, at: new Date().toISOString(), note: "Each entry: the tab the player chose (yourTab) against what Bankwise chose (appTab) and what it knew about the item. Made from Settings -> Export tab corrections.", corrections: out };
+  }
+  /* pins are keyed by the normalised name; the readable name comes from the library or the seen list */
+  function pinName(k) { var names = lib.names().concat(Object.keys(seen)), i; for (i = 0; i < names.length; i++) if (Verdict.norm(names[i]) === k) return names[i]; return k; }
+  function renderCorrectionsStatus() {
+    var n = 0, tid; for (tid in settings.tabPins) n += Object.keys(settings.tabPins[tid]).length;
+    $("fixstatus").textContent = n ? n + " tab correction" + (n === 1 ? "" : "s") + " saved" : "No tab corrections yet - pick a tab on any item's card.";
+    $("fixexport").style.display = n ? "" : "none";
+  }
+  $("fixexport").addEventListener("click", function () {
+    var a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify(correctionsReport(), null, 1)], { type: "application/json" })); a.download = "bankwise-tab-corrections.json"; document.body.appendChild(a); a.click(); a.remove();
   });
   $("rename").addEventListener("click", function (e) { e.preventDefault(); var s = shown && shown.slot; $("renamebox").style.display = ""; $("renameinput").value = s && s.id.name && s.id.state !== "unknown" ? s.id.name : ""; $("renameinput").focus(); });
   $("renameok").addEventListener("click", function () {
@@ -786,5 +827,5 @@
   render(); tick();
   setInterval(tick, READ_MS);
   setInterval(hoverTick, HOVER_MS);
-  window.Bankwise = { _seen: function () { return seen; }, _redraw: function () { overlaySig = ""; drawOverlay(); }, _wiki: function () { return wiki; }, _setWiki: setWiki, _view: function () { return view; }, _lib: function () { return lib; }, _teach: teach, _tick: tick, _settings: settings, cleanName: cleanName };
+  window.Bankwise = { _corrections: correctionsReport, _seen: function () { return seen; }, _redraw: function () { overlaySig = ""; drawOverlay(); }, _wiki: function () { return wiki; }, _setWiki: setWiki, _view: function () { return view; }, _lib: function () { return lib; }, _teach: teach, _tick: tick, _settings: settings, cleanName: cleanName };
 })();

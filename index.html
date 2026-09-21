@@ -5,7 +5,7 @@
 <title>Bankwise</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="icon" href="./icon.png">
-<link rel="stylesheet" href="./style.css?v=0.8.11">
+<link rel="stylesheet" href="./style.css?v=0.8.12">
 </head>
 <body>
 <header>
@@ -34,6 +34,7 @@
     <div id="hverdict" class="verdict">&nbsp;</div>
     <div id="hquests">&nbsp;</div>
     <div id="htab">&nbsp;</div>
+    <div id="tabpickrow" style="display:none"><label>Move it to <select id="tabpick" title="Your choice is remembered for this layout. Export the corrections from Settings so the app's sorting can be fixed."></select></label></div>
     <div id="hpins" style="display:none;visibility:hidden">
       <button data-pin="keep">Always keep</button>
       <button data-pin="junk">Always junk</button>
@@ -122,6 +123,11 @@
     <button id="wikiclear" style="display:none">Remove</button>
   </div>
 
+  <h2>Tab corrections</h2>
+  <div id="fixstatus" class="hint"></div>
+  <div class="btns"><button id="fixexport" style="display:none" title="A file listing every tab you changed, with what the app knew about each item, so its sorting rules can be improved">Export tab corrections</button></div>
+  <div class="hint">When the app puts something in the wrong tab, pick the right one on the item's card. Your choice is kept for that layout and the export lists them all with the app's reasoning.</div>
+
   <h2>Item library</h2>
   <div id="libstatus" class="hint"></div>
   <div class="btns">
@@ -140,23 +146,23 @@
   <pre id="dbgout" style="display:none"></pre>
 </footer>
 
-<script src="./vendor/a1lib.js?v=0.8.11"></script>
-<script src="./vendor/ocr.js?v=0.8.11"></script>
-<script src="./vendor/font-chat-12pt.js?v=0.8.11"></script>
-<script src="./vendor/font-chat-14pt.js?v=0.8.11"></script>
-<script src="./vendor/font-chat-16pt.js?v=0.8.11"></script>
-<script src="./vendor/font-chat-18pt.js?v=0.8.11"></script>
-<script src="./src/reader.js?v=0.8.11"></script>
-<script src="./src/tooltip.js?v=0.8.11"></script>
-<script src="./src/stack.js?v=0.8.11"></script>
-<script src="./src/library.js?v=0.8.11"></script>
-<script src="./src/wikilib.js?v=0.8.11"></script>
-<script src="./src/wikibuild.js?v=0.8.11"></script>
-<script src="./src/data.js?v=0.8.11"></script>
-<script src="./src/kinds.js?v=0.8.11"></script>
-<script src="./src/verdict.js?v=0.8.11"></script>
-<script src="./src/gear.js?v=0.8.11"></script>
-<script src="./src/runemetrics.js?v=0.8.11"></script>
-<script src="./src/app.js?v=0.8.11"></script>
+<script src="./vendor/a1lib.js?v=0.8.12"></script>
+<script src="./vendor/ocr.js?v=0.8.12"></script>
+<script src="./vendor/font-chat-12pt.js?v=0.8.12"></script>
+<script src="./vendor/font-chat-14pt.js?v=0.8.12"></script>
+<script src="./vendor/font-chat-16pt.js?v=0.8.12"></script>
+<script src="./vendor/font-chat-18pt.js?v=0.8.12"></script>
+<script src="./src/reader.js?v=0.8.12"></script>
+<script src="./src/tooltip.js?v=0.8.12"></script>
+<script src="./src/stack.js?v=0.8.12"></script>
+<script src="./src/library.js?v=0.8.12"></script>
+<script src="./src/wikilib.js?v=0.8.12"></script>
+<script src="./src/wikibuild.js?v=0.8.12"></script>
+<script src="./src/data.js?v=0.8.12"></script>
+<script src="./src/kinds.js?v=0.8.12"></script>
+<script src="./src/verdict.js?v=0.8.12"></script>
+<script src="./src/gear.js?v=0.8.12"></script>
+<script src="./src/runemetrics.js?v=0.8.12"></script>
+<script src="./src/app.js?v=0.8.12"></script>
 </body>
 </html>

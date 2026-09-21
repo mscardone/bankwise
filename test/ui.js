@@ -194,6 +194,11 @@ const { spawn } = require('child_process'); const path = require('path'), fs = r
   await page.hover('#list .item:has-text("Deathwarden hood")');
   c2 = await page.textContent('#hverdict'); ok('Deathwarden gear is always keep and the card says upgradeable', /^keep\s*upgradeable/.test(c2) && /upgraded rather than replaced/.test(c2), c2);
   await page.hover('#list .item:has-text("Magic logs")');
+  await page.selectOption('#tabpick', '1'); await page.waitForTimeout(400); await page.hover('#list .item:has-text("Commorb")'); await page.hover('#list .item:has-text("Magic logs")');
+  const tp = await page.evaluate(() => ({ tab: document.getElementById('htab').textContent, row: Array.from(document.querySelectorAll('#list .item')).filter(e => /Magic logs/.test(e.textContent))[0].textContent, rep: Bankwise._corrections() }));
+  ok('tab picked by hand on the card: card and list follow it, and the export says what the app thought: ' + JSON.stringify(tp.rep.corrections[0] && { name: tp.rep.corrections[0].name, your: tp.rep.corrections[0].yourTab, app: tp.rep.corrections[0].appTab, kind: tp.rep.corrections[0].appKind }), /tab 2/.test(tp.tab) && /your choice; the app said tab 9/.test(tp.tab) && /tab 2/.test(tp.row) && tp.rep.corrections.length === 1 && tp.rep.corrections[0].name === 'Magic logs' && tp.rep.corrections[0].yourTab === 2 && tp.rep.corrections[0].appTab === 9 && tp.rep.corrections[0].appKind === 'wood' && Array.isArray(tp.rep.corrections[0].wikiCategories), JSON.stringify(tp).slice(0, 600));
+  await page.selectOption('#tabpick', ''); await page.waitForTimeout(300);
+  ok('"app\'s choice" clears the correction', (await page.evaluate(() => Bankwise._corrections().corrections.length)) === 0 && /tab 9/.test(await page.textContent('#htab')));
   await page.click('#hpins button[data-pin="keep"]'); await page.waitForTimeout(300);
   c2 = await page.textContent('#hverdict'); ok('pin as always keep wins', /You pinned this as always keep/.test(c2), c2);
   // best gear, from what has been seen in the bank; with skill levels on, only what can be worn
