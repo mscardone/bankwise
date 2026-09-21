@@ -5,7 +5,7 @@
 <title>Bankwise</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="icon" href="./icon.png">
-<link rel="stylesheet" href="./style.css?v=0.5.3">
+<link rel="stylesheet" href="./style.css?v=0.7.0">
 </head>
 <body>
 <header>
@@ -18,6 +18,7 @@
 <div id="status">starting&hellip;</div>
 
 <section id="main">
+  <div id="banktotal" style="display:none" title="Adds up every item seen since the last reset, at the stack size it had when last seen. Scroll through all your tabs once to count the whole bank.">Bank total <b id="banktotalvalue" class="gold"></b> <span id="banktotalnote"></span> <a href="#" id="bankreset">reset</a></div>
   <div id="counts"></div>
 
   <div id="hover" class="card">
@@ -26,6 +27,7 @@
       <div class="hovertext">
         <div id="hname">Open your bank</div>
         <div id="hprice">&nbsp;</div>
+        <div id="halch">&nbsp;</div>
       </div>
     </div>
     <div id="hverdict" class="verdict">&nbsp;</div>
@@ -47,15 +49,11 @@
     <button data-f="sell">Sell</button>
     <button data-f="destroy">Destroy</button>
     <button data-f="review">Review</button>
+    <button id="acceptguesses" style="display:none" title="Store the confident wiki guesses on screen (one clear candidate, close match) as known items, without hovering each one"></button>
   </div>
   <div id="list"></div>
 
-  <div id="legend">
-    <span><i class="sw red"></i>hover to teach</span>
-    <span><i class="sw amber"></i>guess / unsure / shares an icon</span>
-    <span><i class="sw t1"></i>1k</span><span><i class="sw t2"></i>10k</span><span><i class="sw t3"></i>100k</span><span><i class="sw t4"></i>1m</span><span><i class="sw t5"></i>10m+</span>
-    <span><b>J</b> junk</span><span><b>D</b> Diango</span><span><b>Q</b> quest done</span><span><b>K</b> quest keep</span>
-  </div>
+  <div id="legend"></div>
 </section>
 
 <section id="settings" style="display:none">
@@ -84,13 +82,36 @@
     </details>
   </div>
 
+  <h2>Overlay</h2>
+  <div class="hint">What gets drawn on top of the bank. The overlay tick-box in the header switches all of it off at once.</div>
+  <label class="row"><input type="checkbox" id="ovtiers"> Colour bar over each item for what <b>one</b> of it is worth</label>
+  <div id="tierrows"></div>
+  <label class="row"><input type="checkbox" id="ovstack"> Stack value under each item, in <input id="ovstackcolor" class="hex" type="text" spellcheck="false" maxlength="7"> <i class="sw" id="ovstackswatch"></i></label>
+  <label class="row sub">only when the stack is worth at least <input id="ovstackmin" type="number" min="0" step="1000"> gp</label>
+  <label class="row sub"><input type="checkbox" id="ovsingles"> also for single items</label>
+  <div class="row">Letters:
+    <label><input type="checkbox" data-ov="tagJ"> <b>J</b> junk / sell</label>
+    <label><input type="checkbox" data-ov="tagD"> <b>D</b> Diango</label>
+    <label><input type="checkbox" data-ov="tagQ"> <b>Q</b> quest done</label>
+    <label><input type="checkbox" data-ov="tagK"> <b>K</b> quest keep</label>
+    <label><input type="checkbox" data-ov="tagR"> <b>?</b> check before destroying</label>
+  </div>
+  <div class="row">Boxes:
+    <label><input type="checkbox" data-ov="boxUnknown"> red: unknown</label>
+    <label><input type="checkbox" data-ov="boxUnsure"> amber: unsure</label>
+    <label><input type="checkbox" data-ov="boxGuess"> thin amber: recognised from a wiki icon, not yet hovered</label>
+    <label><input type="checkbox" data-ov="cornerTwin"> amber corner: shared icon</label>
+  </div>
+  <div class="btns"><button id="ovreset">Overlay back to defaults</button></div>
+
   <h2>Wiki icons (guesses)</h2>
-  <div class="hint">The RuneScape Wiki has a picture of nearly every item. They are not pixel-for-pixel what the game draws, so they are used to guess: a guessed item gets a thin amber outline and "probably", and hovering it confirms it. Building takes a few minutes, once, and fetches every item icon from the wiki.</div>
+  <div class="hint">The RuneScape Wiki has a picture of nearly every item. They are not pixel-for-pixel what the game draws, so an item recognised this way is a very good guess rather than a certainty: it is treated like any known item, and hovering it in the bank (with teach on) settles or corrects it. The app ships with the icons already built; rebuilding fetches every item icon from the wiki again and takes a while.</div>
   <div id="wikistatus" class="hint ok"></div>
   <div class="row">wiki category <input id="wikicat" type="text" value="Items" spellcheck="false" style="width:110px"></div>
   <div class="btns">
     <button id="wikibuild">Build from the wiki</button>
-    <button id="wikidownload" style="display:none" title="Two files to put in the app's data folder so every user gets the guesses without building">Download for the app's data folder</button>
+    <button id="wikidownload" style="display:none" title="One of the two files for the app's data folder, so every user gets the guesses without building">Download wiki-icons.json</button>
+    <button id="wikidownloadbin" style="display:none" title="The other file for the app's data folder (the pictures themselves, about 22 MB)">Download wiki-icons.bin</button>
     <button id="wikiclear" style="display:none">Remove</button>
   </div>
 
@@ -112,21 +133,22 @@
   <pre id="dbgout" style="display:none"></pre>
 </footer>
 
-<script src="./vendor/a1lib.js?v=0.5.3"></script>
-<script src="./vendor/ocr.js?v=0.5.3"></script>
-<script src="./vendor/font-chat-12pt.js?v=0.5.3"></script>
-<script src="./vendor/font-chat-14pt.js?v=0.5.3"></script>
-<script src="./vendor/font-chat-16pt.js?v=0.5.3"></script>
-<script src="./vendor/font-chat-18pt.js?v=0.5.3"></script>
-<script src="./src/reader.js?v=0.5.3"></script>
-<script src="./src/tooltip.js?v=0.5.3"></script>
-<script src="./src/library.js?v=0.5.3"></script>
-<script src="./src/wikilib.js?v=0.5.3"></script>
-<script src="./src/wikibuild.js?v=0.5.3"></script>
-<script src="./src/data.js?v=0.5.3"></script>
-<script src="./src/kinds.js?v=0.5.3"></script>
-<script src="./src/verdict.js?v=0.5.3"></script>
-<script src="./src/runemetrics.js?v=0.5.3"></script>
-<script src="./src/app.js?v=0.5.3"></script>
+<script src="./vendor/a1lib.js?v=0.7.0"></script>
+<script src="./vendor/ocr.js?v=0.7.0"></script>
+<script src="./vendor/font-chat-12pt.js?v=0.7.0"></script>
+<script src="./vendor/font-chat-14pt.js?v=0.7.0"></script>
+<script src="./vendor/font-chat-16pt.js?v=0.7.0"></script>
+<script src="./vendor/font-chat-18pt.js?v=0.7.0"></script>
+<script src="./src/reader.js?v=0.7.0"></script>
+<script src="./src/tooltip.js?v=0.7.0"></script>
+<script src="./src/stack.js?v=0.7.0"></script>
+<script src="./src/library.js?v=0.7.0"></script>
+<script src="./src/wikilib.js?v=0.7.0"></script>
+<script src="./src/wikibuild.js?v=0.7.0"></script>
+<script src="./src/data.js?v=0.7.0"></script>
+<script src="./src/kinds.js?v=0.7.0"></script>
+<script src="./src/verdict.js?v=0.7.0"></script>
+<script src="./src/runemetrics.js?v=0.7.0"></script>
+<script src="./src/app.js?v=0.7.0"></script>
 </body>
 </html>

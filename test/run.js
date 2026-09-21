@@ -122,6 +122,18 @@ console.log("real captures");
     var shot = Reader.readBuffer(loadPng(path.join(__dirname, "shot-slayer-rewards.png")));
     ok("Scott's Slayer rewards screenshot is not a bank: " + (shot.error || shot.slots.length + " slots"), !!shot.error);
   })();
+  /* stack sizes */
+  (function () {
+    var Stack = require("../src/stack.js"), got = {}, unread = 0;
+    plain.slots.forEach(function (sl) { var q = Stack.read(plainBuf, sl); if (!q) unread++; else got[sl.row + "," + sl.col] = q; });
+    var row0 = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(function (c) { return got["0," + c] ? got["0," + c].text || "-" : "?"; }).join(" ");
+    ok("stack numbers of the first row: " + row0, row0 === "91M 74 12 2 4 2 2 - 6085 110" && got["0,0"].qty === 91000000 && got["0,0"].approx && got["0,7"].qty === 1);
+    var all = Object.keys(got).map(function (k) { return got[k].text; });
+    ok("every slot's number reads (" + unread + " unread); 5000, 4906, 7442, 2525 and 3561 are among them", unread === 0 && ["5000", "4906", "7442", "2525", "3561"].every(function (t) { return all.indexOf(t) >= 0; }));
+    var hov = Reader.readBuffer(hoverBuf, false, 0, 0, plain.grid, null), same = 0, diff = [];
+    hov.slots.forEach(function (sl) { if (sl.covered) return; var a = Stack.read(hoverBuf, sl), b = got[sl.row + "," + sl.col]; if (a && b && a.text === b.text) same++; else diff.push(sl.row + "," + sl.col); });
+    ok("same numbers in the second capture (" + same + " slots)", diff.length === 0, diff.join(" "));
+  })();
   ok("no tooltip -> nothing read", Tip.read(plainBuf, 705, 342) === null);
   var w0 = tip.area.whole, hover = Reader.readBuffer(hoverBuf, false, 0, 0, plain.grid, { y0: w0.y, y1: w0.y + w0.height });
   ok("tooltip over the bank: " + rawHover.grid.rows.length + " rows found on their own, " + hover.grid.rows.length + " with the previous read to lean on", hover.grid.rows.length === 20 && hover.slots.every(function (s) { return plain.slots.some(function (q) { return q.x === s.x && q.y === s.y; }); }));
@@ -140,6 +152,17 @@ console.log("real captures");
   lib.add(names[names.length - 1], tw.patch, "test", tw.shifts);
   ok("a look-alike shows the name confirmed most recently", lib.identify(tw.patch, tw.shifts).name === names[names.length - 1]);
   lib.rename(names[0], "Renamed item"); ok("rename keeps the samples", !lib.byName[names[0]] && lib.byName["Renamed item"].length >= 1);
+})();
+(function () {
+  var V = require("../src/verdict.js"), D = require("../src/data.js");
+  ok("K/M/B shorthand never rounds up: " + [950, 12345, 999999, 1234567, 2147483647].map(V.short).join(" "), [950, 12345, 999999, 1234567, 2147483647].map(V.short).join(" ") === "950 12.3K 999K 1.23M 2.14B");
+  var cuts = [1e3, 1e4, 1e5, 1e6, 1e7];
+  ok("value tiers follow the player's cutoffs", V.tier(999, cuts).id === "t0" && V.tier(1000, cuts).id === "t1" && V.tier(5e7, cuts).id === "t5" && V.tier(500, [400, 1e4, 1e5, 1e6, 1e7]).id === "t1" && V.tier(null, cuts).id === "tx");
+  var prices = { "%LAST_UPDATE%": 1 }, i; for (i = 0; i < 150; i++) prices["Item " + i] = 100 + i;
+  var pages = { 1: { title: "Module:GEPrices/data.json", revisions: [{ slots: { main: { "*": JSON.stringify(prices) } } }] }, 2: { title: "Module:GEHighAlchs/data.json", revisions: [{ slots: { main: { "*": JSON.stringify({ "Item 1": 77 }) } } }] }, 3: { title: "Module:GEValues/data.json", revisions: [{ slots: { main: { "*": JSON.stringify({ "Item 2": 100 }) } } }] } };
+  var p = D._parseBulk({ query: { pages: pages } });
+  ok("wiki price tables: price, high alch, and alch worked out from value when the alch table has no entry", p && p["item 1"][0] === 101 && p["item 1"][1] === 77 && p["item 2"][1] === 60 && !p["%last_update%"], JSON.stringify(p && p["item 1"]));
+  ok("a missing price table is reported, not half-used", D._parseBulk({ query: { pages: { 2: pages[2] } } }) === null);
 })();
 console.log(fails ? fails + " FAILED" : "all checks passed");
 process.exit(fails ? 1 : 0);

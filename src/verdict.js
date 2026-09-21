@@ -12,10 +12,27 @@
   var SKILLS = ["Attack", "Defence", "Strength", "Constitution", "Ranged", "Prayer", "Magic", "Cooking", "Woodcutting", "Fletching", "Fishing", "Firemaking", "Crafting", "Smithing", "Mining", "Herblore", "Agility", "Thieving", "Slayer", "Farming", "Runecrafting", "Hunter", "Construction", "Summoning", "Dungeoneering", "Divination", "Invention", "Archaeology", "Necromancy"];
   var TIERS = [[1e7, "t5", "10m+"], [1e6, "t4", "1m+"], [1e5, "t3", "100k+"], [1e4, "t2", "10k+"], [1e3, "t1", "1k+"], [0, "t0", "under 1k"]];
 
-  function tier(price) {
+  /* cutoffs (optional): the player's own five "worth at least" figures for t1..t5, in any order of size */
+  function tier(price, cutoffs) {
     if (price === null || price === undefined) return { id: "tx", label: "no price" };
-    for (var i = 0; i < TIERS.length; i++) if (price >= TIERS[i][0]) return { id: TIERS[i][1], label: TIERS[i][2] };
+    var i;
+    if (cutoffs && cutoffs.length) {
+      var best = -1;
+      for (i = 0; i < cutoffs.length; i++) if (price >= cutoffs[i] && (best < 0 || cutoffs[i] >= cutoffs[best])) best = i;
+      return best < 0 ? { id: "t0", label: "below the first cutoff" } : { id: "t" + (best + 1), label: short(cutoffs[best]) + "+" };
+    }
+    for (i = 0; i < TIERS.length; i++) if (price >= TIERS[i][0]) return { id: TIERS[i][1], label: TIERS[i][2] };
     return { id: "t0", label: "under 1k" };
+  }
+  /* the game's own shorthand, three figures, never rounded up: 950, 12.3K, 1.23M, 2.5B */
+  function short(n) {
+    if (n === null || n === undefined) return "-";
+    var u = [[1e9, "B"], [1e6, "M"], [1e3, "K"]], i;
+    for (i = 0; i < u.length; i++) if (n >= u[i][0]) {
+      var v = n / u[i][0], m = v >= 100 ? 1 : v >= 10 ? 10 : 100;
+      return String(Math.floor(v * m + 1e-9) / m) + u[i][1];
+    }
+    return String(Math.floor(n));
   }
   function gp(n) {
     if (n === null || n === undefined) return "-";
@@ -63,12 +80,12 @@
     if (item.tradeable) {
       var cut = opts.junkBelow === undefined ? 500 : opts.junkBelow;
       if (!supply && item.price !== null && item.price < cut && ["weapon", "armour", "jewellery", "misc", "tools"].indexOf(item.kind) >= 0)
-        return { id: "sell", tag: "J", reason: "Tradeable, worth " + gp(item.price) + " each, and not a consumable: sell it or alch it (" + gp(item.alch) + ")." };
+        return { id: "sell", tag: "J", reason: "Tradeable, worth " + gp(item.price) + " each, and not a consumable: " + (item.alch ? (item.alch > item.price ? "high alch it for " + gp(item.alch) + ", which beats selling." : "sell it, or alch it for " + gp(item.alch) + ".") : "sell it.") };
       return { id: "keep", tag: "", reason: supply ? "Consumable supply - keep while you use it, sell when you stop." : "Tradeable, " + gp(item.price) + " each." };
     }
     if (!item.known) return { id: "review", tag: "", reason: "Not tradeable and the wiki has no page under this exact name." };
     return { id: "review", tag: "", reason: "Untradeable and not reclaimable - check the wiki before destroying it." };
   }
 
-  return { judge: judge, tier: tier, gp: gp, norm: norm, SKILLS: SKILLS, TIERS: TIERS };
+  return { judge: judge, tier: tier, short: short, gp: gp, norm: norm, SKILLS: SKILLS, TIERS: TIERS };
 });

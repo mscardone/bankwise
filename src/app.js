@@ -2,7 +2,7 @@
    draws value/verdict markers over the game and explains each verdict. */
 (function () {
   "use strict";
-  var VERSION = "0.5.3";
+  var VERSION = "0.7.0";
   var READ_MS = 700, HOVER_MS = 250, OVERLAY_MS = 5000, OVERLAY_GROUP = "bankwise";
   function $(id) { return document.getElementById(id); }
   var store = {
@@ -12,12 +12,33 @@
   function loadJSON(k, fallback) { try { var v = JSON.parse(store.get(k) || "null"); return v === null || v === undefined ? fallback : v; } catch (e) { return fallback; } }
 
   var DEFAULTS = { template: "five", junkBelow: 500, useQuests: false, useSkills: false, goalLevel: 99, useOverrides: false, overrides: {}, overlay: true, rmUser: "", teach: true };
+  /* everything the overlay draws can be switched off, and the value colours and cutoffs are the player's to change */
+  var OV_DEFAULTS = {
+    showTiers: true, tiers: [{ min: 1000, color: "#4ea56a" }, { min: 10000, color: "#45b5c4" }, { min: 100000, color: "#6f9bff" }, { min: 1000000, color: "#b07cff" }, { min: 10000000, color: "#f0c040" }],
+    showStack: true, stackSingles: true, stackMin: 0, stackColor: "#f8d56b",
+    tagJ: true, tagD: true, tagQ: true, tagK: true, tagR: false,
+    boxUnknown: true, boxUnsure: true, boxGuess: false, cornerTwin: true
+  };
+  function ovDefaults() { return JSON.parse(JSON.stringify(OV_DEFAULTS)); }
+  function hexOk(h) { return /^#[0-9a-f]{6}$/i.test(h || ""); }
+  function cleanHex(h) { h = String(h || "").trim(); if (h.charAt(0) !== "#") h = "#" + h; if (/^#[0-9a-f]{3}$/i.test(h)) h = "#" + h[1] + h[1] + h[2] + h[2] + h[3] + h[3]; return hexOk(h) ? h.toLowerCase() : null; }
+  function rgb(h) { return [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)]; }
   var settings = loadJSON("bankwise.settings.v1", {}), k;
   for (k in DEFAULTS) if (settings[k] === undefined) settings[k] = DEFAULTS[k];
+  (function () {
+    var d = ovDefaults(), o = settings.ov && typeof settings.ov === "object" ? settings.ov : {}, i;
+    for (k in d) if (o[k] === undefined || typeof o[k] !== typeof d[k]) o[k] = d[k];
+    if (!Array.isArray(o.tiers) || o.tiers.length !== d.tiers.length) o.tiers = d.tiers;
+    for (i = 0; i < o.tiers.length; i++) { if (!o.tiers[i] || !hexOk(o.tiers[i].color)) o.tiers[i] = d.tiers[i]; o.tiers[i].min = Math.max(0, +o.tiers[i].min || 0); }
+    if (!hexOk(o.stackColor)) o.stackColor = d.stackColor;
+    settings.ov = o;
+  })();
+  function tierOf(price) { return Verdict.tier(price, settings.ov.tiers.map(function (t) { return t.min; })); }
   var profile = loadJSON("bankwise.profile.v1", null);
   var lib = Library.fromJSON(loadJSON("bankwise.library.v1", null)), libVersion = 1, libSaveTimer = null, libSaveFailed = false;
 
-  lib.names().forEach(function (n) { if (/^(withdraw|deposit)(-\S+)?$/i.test(n) || n.length < 3) lib.forget(n); });   /* v0.2.x could learn the action word as a name */
+  var NOT_A_NAME = /^((withdraw|deposit)(-\S+)?|view tab \d+)$/i;
+  lib.names().forEach(function (n) { if (NOT_A_NAME.test(n) || n.length < 3) lib.forget(n); });   /* v0.2.x could learn the action word as a name */
 
   var nameColours = loadJSON("bankwise.namecolours.v1", {}), tipColour = null;   /* the colour the game draws each item's name in - it means something, not yet known what */
 
@@ -27,6 +48,7 @@
   var shown = null;             /* what the detail card shows: {slot} from the bank or {name} from the list */
   var hoverSlot = null, tipName = "", tipCount = 0, tipRaw = "", tipArea = null, tipWhy = "", lastTaught = "";
   var seedInfo = "not loaded yet";
+  var total = 0, totalUnknown = 0;
   var filter = "all", overlaySig = "", overlayAt = 0, lastError = "";
 
   function saveSettings() { store.set("bankwise.settings.v1", JSON.stringify(settings)); }
@@ -57,6 +79,16 @@
       if (g) s.id = { state: "guess", name: g.name, d: g.d, alts: g.alts, rival: s.id.name || null, rivalD: s.id.d };
     });
   }
+  /* stack sizes: read fresh every time (cheap), kept from the previous read while a tooltip covers the slot */
+  function readStacks(r) {
+    var prev = {};
+    if (view) view.slots.forEach(function (s) { prev[posKey(s)] = s.stack; });
+    r.slots.forEach(function (s) {
+      if (s.covered) { s.stack = prev[posKey(s)] || null; return; }
+      try { s.stack = Stack.read(r.buf, s, r.off); } catch (e) { s.stack = null; }
+    });
+  }
+  function stackValue(s, it) { return it.price !== null && s.stack && s.stack.qty ? it.price * s.stack.qty : null; }
   function hash(pt) { var h = 2166136261, i; for (i = 0; i < pt.length; i++) { h ^= pt[i]; h = (h * 16777619) >>> 0; } return h.toString(36); }
   function posKey(s) { return s.x + "," + s.y; }
   function overlaps(s, a) { return a && s.x < a.x + a.width + 4 && s.x + s.w > a.x - 4 && s.y < a.y + a.height + 4 && s.y + s.h > a.y - 4; }
@@ -82,8 +114,42 @@
     it.kind = Kinds.kindOf(name, it.cats);
     it.tab = Kinds.tabFor(it.kind, settings.template);
     it.verdict = Verdict.judge(it, settings, profile, Kinds);
-    it.tier = Verdict.tier(it.price);
+    if (name === "Coins") { it.price = 1; it.verdict = { id: "keep", tag: "", reason: "Money." }; }
+    it.tier = tierOf(it.price);
     return it;
+  }
+
+  /* ---------- whole-bank total ---------- */
+  /* The app only ever sees the part of the bank that is on screen, so the total is kept as a
+     running record: every icon seen since the last reset, with the name and stack size it had
+     the last time it was seen.  Keyed by the icon, so a corrected name replaces the wrong one. */
+  var bank = loadJSON("bankwise.bank.v1", {}), bankDirty = false, bankSavedAt = 0;
+  function noteBank(r) {
+    var now = {}, h;
+    r.slots.forEach(function (s) {
+      if (s.covered || !named(s) || !s.hash) return;
+      var q = s.stack && s.stack.qty ? s.stack.qty : null, e = now[s.hash];
+      if (e) { e.q = e.q !== null && q !== null ? e.q + q : null; } else now[s.hash] = { n: s.id.name, q: q };
+    });
+    for (h in now) { var old = bank[h]; if (!old || old.n !== now[h].n || old.q !== now[h].q) { bank[h] = now[h]; bankDirty = true; } }
+    if (bankDirty && Date.now() - bankSavedAt > 5000) { bankDirty = false; bankSavedAt = Date.now(); store.set("bankwise.bank.v1", JSON.stringify(bank)); }
+  }
+  function bankTotal() {
+    var t = 0, n = 0, unpriced = 0, h;
+    for (h in bank) {
+      var e = bank[h], p = e.n === "Coins" ? { price: 1 } : Data.price(e.n);
+      n++;
+      if (p && p.price !== null) t += p.price * (e.q || 1); else unpriced++;
+    }
+    return { total: t, items: n, unpriced: unpriced };
+  }
+  function renderBankTotal() {
+    var b = bankTotal(), el = $("banktotal");
+    if (!b.items) { el.style.display = "none"; return; }
+    el.style.display = "";
+    $("banktotalvalue").textContent = Verdict.short(b.total);
+    $("banktotalvalue").title = String(Math.round(b.total)).replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " gp";
+    $("banktotalnote").textContent = b.items + " different items seen" + (b.unpriced ? ", " + b.unpriced + " with no price" : "");
   }
 
   /* ---------- overlay ---------- */
@@ -91,7 +157,9 @@
   function colours() {
     if (COL) return COL;
     var m = A1lib.mixColor;
-    COL = { red: m(208, 74, 58), amber: m(224, 160, 48), t1: m(78, 165, 106), t2: m(69, 181, 196), t3: m(111, 155, 255), t4: m(176, 124, 255), t5: m(240, 192, 64), tag: m(255, 255, 255), warn: m(255, 120, 80) };
+    COL = { red: m(208, 74, 58), amber: m(224, 160, 48), tag: m(255, 255, 255), warn: m(255, 120, 80) };
+    settings.ov.tiers.forEach(function (t, i) { var c = rgb(t.color); COL["t" + (i + 1)] = m(c[0], c[1], c[2]); });
+    var g = rgb(settings.ov.stackColor); COL.stack = m(g[0], g[1], g[2]);
     return COL;
   }
   function overlayOk() { return window.alt1 && alt1.permissionOverlay && settings.overlay; }
@@ -102,26 +170,36 @@
   }
   function drawOverlay() {
     if (!overlayOk() || !view) { clearOverlay(); return; }
-    var sig = view.slots.map(function (s) { return posKey(s) + ":" + s.id.state[1] + (named(s) ? s.id.name : ""); }).join("|") + "#" + Data.status.prices + Data.status.facts, now = Date.now();
+    var sig = view.slots.map(function (s) { return posKey(s) + ":" + s.id.state[1] + (named(s) ? s.id.name + "x" + (s.stack ? s.stack.text : "?") : ""); }).join("|") + "#" + Data.status.prices + Data.status.facts, now = Date.now();
     if (sig === overlaySig && now - overlayAt < OVERLAY_MS - 1500) return;
     var c = colours();
     try {
       alt1.overLaySetGroup(OVERLAY_GROUP);
       if (alt1.overLayFreezeGroup) alt1.overLayFreezeGroup(OVERLAY_GROUP);
       alt1.overLayClearGroup(OVERLAY_GROUP);
+      var ov = settings.ov, TAGS = { J: ov.tagJ, D: ov.tagD, Q: ov.tagQ, K: ov.tagK, "?": ov.tagR };
       view.slots.forEach(function (s) {
         if (s.id.state === "covered") return;
-        var inset = Math.round(s.w * 0.07);
-        if (s.id.state === "unknown") { alt1.overLayRect(c.red, s.x + inset, s.y + inset, s.w - 2 * inset, s.h - 2 * inset, OVERLAY_MS, 2); return; }
-        if (s.id.state === "unsure") { alt1.overLayRect(c.amber, s.x + inset, s.y + inset, s.w - 2 * inset, s.h - 2 * inset, OVERLAY_MS, 2); return; }
-        var it = info(s.id.name);
-        if (s.id.state === "guess") alt1.overLayRect(c.amber, s.x + inset, s.y + inset, s.w - 2 * inset, s.h - 2 * inset, OVERLAY_MS, 1);   /* thin amber = probably, hover to confirm */
-        if (s.id.state === "twin") alt1.overLayRect(c.amber, s.x + inset, s.y + inset, 4, 4, OVERLAY_MS, 2);      /* shares its icon with other items */
-        if (c[it.tier.id]) alt1.overLayRect(c[it.tier.id], s.x + inset, s.y + s.h - inset - 2, s.w - 2 * inset, 2, OVERLAY_MS, 2);
-        if (it.verdict.tag) {
-          var col = it.verdict.id === "keep" ? c.tag : c.warn, size = Math.max(9, Math.round(s.w * 0.25));
-          if (alt1.overLayTextEx) alt1.overLayTextEx(it.verdict.tag, col, size, s.x + s.w - inset - Math.round(size * 0.45), s.y + s.h - inset - Math.round(size * 0.8), OVERLAY_MS, "", true, true);
-          else alt1.overLayText(it.verdict.tag, col, size, s.x + s.w - inset - size, s.y + s.h - inset - size, OVERLAY_MS);
+        var inset = Math.round(s.w * 0.07), size = Math.max(9, Math.round(s.w * 0.25));
+        if (s.id.state === "unknown") { if (ov.boxUnknown) alt1.overLayRect(c.red, s.x + inset, s.y + inset, s.w - 2 * inset, s.h - 2 * inset, OVERLAY_MS, 2); return; }
+        if (s.id.state === "unsure") { if (ov.boxUnsure) alt1.overLayRect(c.amber, s.x + inset, s.y + inset, s.w - 2 * inset, s.h - 2 * inset, OVERLAY_MS, 2); return; }
+        var it = info(s.id.name), sv = stackValue(s, it);
+        if (s.id.state === "guess" && ov.boxGuess) alt1.overLayRect(c.amber, s.x + inset, s.y + inset, s.w - 2 * inset, s.h - 2 * inset, OVERLAY_MS, 1);   /* thin amber = probably, hover to confirm */
+        if (s.id.state === "twin" && ov.cornerTwin) alt1.overLayRect(c.amber, s.x + inset, s.y + s.h - inset - 4, 4, 4, OVERLAY_MS, 2);      /* shares its icon with other items */
+        /* the colour says what ONE of the item is worth; a bar along the top, clear of the stack number below it */
+        if (ov.showTiers && c[it.tier.id]) alt1.overLayRect(c[it.tier.id], s.x + inset, s.y + 1, s.w - 2 * inset, 2, OVERLAY_MS, 2);
+        /* the whole stack's worth, written under the item the way the game writes gold */
+        var worth = sv !== null ? sv : (s.stack === null ? null : it.price);
+        if (ov.showStack && worth !== null && worth >= ov.stackMin && (ov.stackSingles || (s.stack && s.stack.qty > 1))) {
+          var txt = (s.stack && s.stack.approx ? "~" : "") + Verdict.short(worth), ts = Math.max(9, Math.round(s.w * 0.23));
+          if (alt1.overLayTextEx) alt1.overLayTextEx(txt, c.stack, ts, Math.round(s.x + s.w / 2), s.y + s.h - Math.round(ts * 0.5), OVERLAY_MS, "", true, true);
+          else alt1.overLayText(txt, c.stack, ts, s.x + inset, s.y + s.h - ts, OVERLAY_MS);
+        }
+        var tag = it.verdict.tag || (it.verdict.id === "review" ? "?" : "");
+        if (tag && TAGS[tag]) {
+          var col = it.verdict.id === "keep" ? c.tag : c.warn;      /* top right: the stack number owns the top left, the value the bottom */
+          if (alt1.overLayTextEx) alt1.overLayTextEx(tag, col, size, s.x + s.w - inset - Math.round(size * 0.45), s.y + inset + Math.round(size * 0.55), OVERLAY_MS, "", true, true);
+          else alt1.overLayText(tag, col, size, s.x + s.w - inset - size, s.y + inset, OVERLAY_MS);
         }
       });
       if (alt1.overLayRefreshGroup) alt1.overLayRefreshGroup(OVERLAY_GROUP);
@@ -152,6 +230,8 @@
     lastError = "";
     identifyAll(r, mousePos());
     guessUnknown(r);
+    readStacks(r);
+    noteBank(r);
     view = r;
     render(); drawOverlay();
   }
@@ -161,7 +241,7 @@
   /* the tooltip reader already separates the action from the name (by colour); this only tidies */
   function cleanName(raw) {
     var t = String(raw || "").replace(/\s+/g, " ").replace(/^[^A-Za-z0-9'(]+|[^A-Za-z0-9')+]+$/g, "").trim();
-    return /^(withdraw|deposit)(-\S+)?$/i.test(t) ? "" : t;
+    return NOT_A_NAME.test(t) ? "" : t;
   }
   /* the tooltip near the mouse, in capture coordinates: {area, text, why} or null */
   function readTip(m) {
@@ -175,7 +255,7 @@
     return { area: { x: a.x + x, y: a.y + y, width: a.width, height: a.height }, text: tip.text, why: tip.why, colours: tip.colours, font: tip.font, colour: tip.colour };
   }
   function hoverTick() {
-    if (!view || !window.TipReader || !window.alt1 || !settings.teach) return;
+    if (!view || !window.TipReader || !window.alt1) return;      /* the card follows the mouse whether or not teach is on */
     var m = mousePos(), slot = null;
     if (m) view.slots.forEach(function (s) { if (m.x >= s.x && m.x < s.x + s.w && m.y >= s.y && m.y < s.y + s.h) slot = s; });
     if (!slot) { if (hoverSlot) { hoverSlot = null; tipCount = 0; tipArea = null; } return; }
@@ -189,7 +269,7 @@
       else tipWhy = "no tooltip box found near the mouse";
     } catch (e) { tipWhy = "tooltip reader crashed: " + (e && e.message || e); }
     if (name.length >= 3 && name === tipName) tipCount++; else { tipName = name; tipCount = name ? 1 : 0; }
-    if (tipCount === 2) { if (tipColour) { nameColours[name] = tipColour; store.set("bankwise.namecolours.v1", JSON.stringify(nameColours)); } teach(slot, name); }
+    if (tipCount === 2 && settings.teach) { if (tipColour) { nameColours[name] = tipColour; store.set("bankwise.namecolours.v1", JSON.stringify(nameColours)); } teach(slot, name); }
     renderCard();
   }
   function teach(slot, name, force) {
@@ -221,28 +301,35 @@
   function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
   function slotImg(s) { if (!s._img && view && view.buf) { try { s._img = Reader.slotImage(view.buf, s, view.off); } catch (e) { s._img = ""; } } return s._img || ""; }
   function render() {
-    if (!view) { $("counts").innerHTML = ""; $("list").innerHTML = '<div class="empty">Nothing to show until the bank is open.</div>'; $("list")._html = ""; renderCard(); return; }
+    if (!view) { renderBankTotal(); $("counts").innerHTML = ""; $("list").innerHTML = '<div class="empty">Nothing to show until the bank is open.</div>'; $("list")._html = ""; renderCard(); return; }
     var known = 0, unsure = 0, unknown = 0, guessed = 0;
     view.slots.forEach(function (s) { if (s.id.state === "guess") guessed++; else if (named(s)) known++; else if (s.id.state === "unsure") unsure++; else if (s.id.state !== "covered") unknown++; });
-    setStatus(unknown + unsure + guessed ? (settings.teach ? (unknown + unsure ? "Sweep your mouse over the boxed items so I can learn them." : "Amber items are guesses from the wiki. Hover one to confirm it.") : "Learning is off. Turn on teach to confirm guesses and learn the boxed items.") : "Every item on screen is known.", false);
-    $("counts").innerHTML = "<span><b>" + view.slots.length + "</b> on screen</span><span><b>" + known + "</b> known</span><span><b>" + guessed + "</b> guessed</span><span><b>" + (unknown + unsure) + "</b> to teach</span><span><b>" + lib.names().length + "</b> in library</span>";
+    /* an item recognised from the wiki's icon is treated as known: hovering it still corrects it, but nobody is asked to */
+    setStatus(unknown + unsure ? (settings.teach ? "Sweep your mouse over the boxed items so I can learn them." : "Learning is off. Turn on teach to learn the boxed items.") : "Every item on screen is known.", false);
+    $("counts").innerHTML = "<span><b>" + view.slots.length + "</b> on screen</span><span title='" + guessed + " of them recognised from the wiki icons'><b>" + (known + guessed) + "</b> known</span><span><b>" + (unknown + unsure) + "</b> to teach</span><span><b>" + lib.names().length + "</b> in library</span>";
     renderList(); renderCard();
+    var cg = confidentGuesses().length;
+    $("acceptguesses").style.display = cg ? "" : "none"; $("acceptguesses").textContent = "Accept " + cg + " sure guess" + (cg === 1 ? "" : "es");
+    if (total) $("counts").innerHTML += "<span>worth about <b>" + Verdict.short(total) + "</b> on screen</span>";
+    renderBankTotal();
   }
   function renderList() {
     var rows = [], seen = {};
     view.slots.forEach(function (s) {
       if (s.id.state === "covered") return;
       if (!named(s)) { rows.push({ slot: s, teach: true, price: -1 }); return; }
-      if (seen[s.id.name]) return;
-      seen[s.id.name] = 1;
-      var it = info(s.id.name); rows.push({ slot: s, it: it, price: it.price === null ? -0.5 : it.price });
+      var it = info(s.id.name), sv = stackValue(s, it), qty = s.stack ? s.stack.qty : null;
+      if (seen[s.id.name]) { var first = seen[s.id.name]; if (qty !== null && first.qty !== null) first.qty += qty; else first.qty = null; first.value = first.qty !== null && it.price !== null ? it.price * first.qty : null; first.price = first.value === null ? first.price : first.value; return; }
+      rows.push(seen[s.id.name] = { slot: s, it: it, qty: qty, value: sv, approx: !!(s.stack && s.stack.approx), price: sv !== null ? sv : (it.price === null ? -0.5 : it.price) });
     });
+    total = 0; totalUnknown = 0;
+    rows.forEach(function (r) { if (r.teach) return; if (r.value !== null) total += r.value; else if (r.it.price !== null) { total += r.it.price; totalUnknown++; } });
     rows = rows.filter(function (r) { return filter === "all" || (filter === "teach" ? r.teach : (r.it && r.it.verdict.id === filter)); });
     rows.sort(function (a, b) { return b.price - a.price; });
     var html = rows.map(function (r, i) {
       var img = slotImg(r.slot);
       if (r.teach) return '<div class="item" data-i="' + i + '"><div class="mini" style="background-image:url(' + img + ')"></div><div class="nm"><span class="chip ' + (r.slot.id.state === "unsure" ? "unsure" : "teach") + '">' + (r.slot.id.state === "unsure" ? "unsure" : "new") + "</span> " + (r.slot.id.state === "unsure" ? esc(r.slot.id.name) + "?" : "hover it in the bank") + "</div></div>";
-      return '<div class="item" data-i="' + i + '"><div class="mini" style="background-image:url(' + img + ')"></div><div class="nm">' + (r.slot.id.state === "guess" ? '<span class="chip unsure">probably</span> ' : "") + (r.it.verdict.id !== "keep" ? '<span class="chip ' + r.it.verdict.id + '">' + r.it.verdict.id + "</span> " : "") + esc(r.it.name) + '</div><div class="tabn">tab ' + r.it.tab.number + '</div><div class="pr ' + r.it.tier.id + '">' + Verdict.gp(r.it.price) + "</div></div>";
+      return '<div class="item" data-i="' + i + '"><div class="mini" style="background-image:url(' + img + ')"></div><div class="nm">' + (r.it.verdict.id !== "keep" ? '<span class="chip ' + r.it.verdict.id + '">' + r.it.verdict.id + "</span> " : "") + esc(r.it.name) + (r.qty > 1 ? ' <span class="qty">x' + Verdict.short(r.qty) + "</span>" : "") + '</div><div class="tabn">tab ' + r.it.tab.number + '</div><div class="pr ' + r.it.tier.id + '" title="' + (r.it.price !== null ? Verdict.gp(r.it.price) + " each" : "") + '">' + (r.value !== null ? (r.approx ? "~" : "") + Verdict.short(r.value) : Verdict.short(r.it.price)) + "</div></div>";
     }).join("");
     html = html || '<div class="empty">Nothing in this filter.</div>';
     if (html !== $("list")._html) { $("list").innerHTML = html; $("list")._html = html; }   /* untouched when nothing changed: keeps scroll and hover steady */
@@ -251,23 +338,30 @@
   function renderCard() {
     var s = shown && shown.slot, live = s && view && view.slots.indexOf(s) >= 0;
     if (s && !live && view) { var pk = posKey(s); s = null; view.slots.forEach(function (q) { if (posKey(q) === pk) s = q; }); if (s) shown.slot = s; }
-    if (!s) { $("hicon").style.backgroundImage = ""; $("hname").textContent = view ? "Hover an item" : "Open your bank"; $("hprice").innerHTML = "&nbsp;"; $("hverdict").innerHTML = view ? "Hover an item in the bank, or a row below, to see what it is worth, where it belongs and whether to keep it." : "&nbsp;"; $("htab").innerHTML = "&nbsp;"; $("hpins").style.display = settings.useOverrides ? "" : "none"; $("hpins").style.visibility = "hidden"; $("hfix").style.visibility = "hidden"; return; }
+    if (!s) { $("hicon").style.backgroundImage = ""; $("hname").textContent = view ? "Hover an item" : "Open your bank"; $("hprice").innerHTML = "&nbsp;"; $("halch").innerHTML = "&nbsp;"; $("hverdict").innerHTML = view ? "Hover an item in the bank, or a row below, to see what it is worth, where it belongs and whether to keep it." : "&nbsp;"; $("htab").innerHTML = "&nbsp;"; $("hpins").style.display = settings.useOverrides ? "" : "none"; $("hpins").style.visibility = "hidden"; $("hfix").style.visibility = "hidden"; return; }
     $("hicon").style.backgroundImage = "url(" + slotImg(s) + ")";
     $("hfix").style.visibility = ""; $("hpins").style.display = settings.useOverrides ? "" : "none";
     if (!named(s)) {
       $("hname").style.color = "";
       $("hname").textContent = s.id.state === "unsure" ? s.id.name + "?" : "Unknown item";
-      $("hprice").innerHTML = hoverSlot === s ? (tipName ? "reading: <b>" + esc(tipName) + "</b>" : "keep the mouse still until the game shows its name") : "&nbsp;";
-      $("hverdict").innerHTML = '<span class="chip ' + (s.id.state === "unsure" ? "unsure" : "teach") + '">' + (s.id.state === "unsure" ? "unsure" : "new") + "</span>" + (s.id.state === "unsure" ? "Looks like " + esc(s.id.name) + (s.id.rival ? " or " + esc(s.id.rival) : "") + ". Hover it in the bank to confirm." : "Hover it in the bank and I will remember it from then on.");
+      $("hprice").innerHTML = hoverSlot === s && settings.teach ? (tipName ? "reading: <b>" + esc(tipName) + "</b>" : "keep the mouse still until the game shows its name") : "&nbsp;";
+      $("halch").innerHTML = "&nbsp;";
+      $("hverdict").innerHTML = '<span class="chip ' + (s.id.state === "unsure" ? "unsure" : "teach") + '">' + (s.id.state === "unsure" ? "unsure" : "new") + "</span>" + (s.id.state === "unsure" ? "Looks like " + esc(s.id.name) + (s.id.rival ? " or " + esc(s.id.rival) : "") + ". Hover it in the bank to confirm." : (settings.teach ? "Hover it in the bank and I will remember it from then on." : "Teach is off. Tick teach at the top, then hover it, and I will remember it."));
       $("htab").innerHTML = "&nbsp;"; $("hpins").style.visibility = "hidden";
       return;
     }
     var it = info(s.id.name);
     $("hname").textContent = it.name;
     $("hname").style.color = nameColours[it.name] ? "rgb(" + nameColours[it.name].join(",") + ")" : "";
-    $("hprice").innerHTML = it.price !== null ? "<b>" + Verdict.gp(it.price) + "</b> each" + (it.alch ? " &middot; alch " + Verdict.gp(it.alch) : "") : (it.tradeable === false ? "not tradeable" : "price not loaded");
+    var sv = stackValue(s, it), st = s.stack;
+    var many = st && st.qty > 1;
+    $("hprice").innerHTML = it.price !== null
+      ? "<b>" + Verdict.gp(it.price) + "</b> each" + (many && sv !== null ? " &middot; " + (st.approx ? "about " : "") + Verdict.short(st.qty) + " of them = <b class='gold'>" + (st.approx ? "~" : "") + Verdict.short(sv) + "</b>" : "") + (st === null ? " &middot; stack size unread" : "")
+      : (it.tradeable === false ? "not tradeable" : "price not loaded") + (many ? " &middot; " + Verdict.short(st.qty) + " of them" : "");
+    $("halch").innerHTML = it.alch ? "High alch <b>" + Verdict.gp(it.alch) + "</b>" + (many ? " &middot; stack <b>" + Verdict.short(it.alch * st.qty) + "</b>" : "") + (it.price !== null && it.alch > it.price ? " <span class='twin'>more than it sells for</span>" : "")
+      : (it.tradeable === false ? "High alch: not known (the price tables only list tradeable items)" : (it.alch === 0 ? "High alch: nothing" : "High alch: not loaded"));
     $("hverdict").innerHTML = '<span class="chip ' + it.verdict.id + '">' + it.verdict.id + "</span>" + esc(it.verdict.reason) +
-      (s.id.state === "guess" ? " <span class='twin'>A guess from the wiki's icon" + (s.id.alts && s.id.alts.length ? " (or " + esc(s.id.alts.join(", ")) + ")" : "") + ". Hover it in the bank to confirm.</span>" : "") +
+      (s.id.state === "guess" ? " <span class='qty'>Recognised from the wiki's icon" + (s.id.alts && s.id.alts.length ? " (could also be " + esc(s.id.alts.join(", ")) + ")" : "") + "; hovering it in the bank settles it.</span>" : "") +
       (s.id.state === "twin" ? " <span class='twin'>Same icon as " + esc(s.id.twins.filter(function (n) { return n !== it.name; }).join(", ")) + " - showing the one you last hovered.</span>" : "");
     $("htab").innerHTML = "Belongs in <b>tab " + it.tab.number + " &middot; " + esc(it.tab.name) + "</b> <span title='" + esc(it.cats.slice(0, 12).join(", ")) + "'>(" + esc(Kinds.KIND_LABEL[it.kind]) + ")</span>";
     $("hpins").style.visibility = "";
@@ -300,15 +394,49 @@
     $("template").value = settings.template; $("junkbelow").value = settings.junkBelow; $("goallevel").value = settings.goalLevel;
     $("usequests").checked = settings.useQuests; $("useskills").checked = settings.useSkills; $("useoverrides").checked = settings.useOverrides;
     $("overlay").checked = settings.overlay; $("teach").checked = settings.teach; $("rmuser").value = settings.rmUser;
-    renderTemplate(); renderLibStatus(); renderProfile(); renderWikiStatus();
+    renderTemplate(); renderLibStatus(); renderProfile(); renderWikiStatus(); renderOverlaySettings(); applyOverlayLook();
   }
+  /* ----- overlay settings ----- */
+  function applyOverlayLook() {
+    var ov = settings.ov, root = document.documentElement.style;
+    ov.tiers.forEach(function (t, i) { root.setProperty("--t" + (i + 1), t.color); });
+    root.setProperty("--stackgold", ov.stackColor);
+    COL = null;
+    var on = function (flag, html) { return '<span' + (flag ? "" : ' class="off"') + ">" + html + "</span>"; };
+    $("legend").innerHTML = on(ov.boxUnknown, '<i class="sw red"></i>hover to teach') + on(ov.boxUnsure || ov.boxGuess || ov.cornerTwin, '<i class="sw amber"></i>unsure / shares an icon') +
+      ov.tiers.map(function (t, i) { return on(ov.showTiers, '<i class="sw t' + (i + 1) + '"></i>' + Verdict.short(t.min) + (i === ov.tiers.length - 1 ? "+" : "")); }).join("") + on(ov.showTiers, "for one") +
+      on(ov.showStack, '<b class="gold">12.3K</b> stack value') +
+      on(ov.tagJ, "<b>J</b> junk") + on(ov.tagD, "<b>D</b> Diango") + on(ov.tagQ, "<b>Q</b> quest done") + on(ov.tagK, "<b>K</b> quest keep") + (ov.tagR ? on(true, "<b>?</b> check first") : "");
+  }
+  function renderOverlaySettings() {
+    var ov = settings.ov;
+    $("ovtiers").checked = ov.showTiers; $("ovstack").checked = ov.showStack; $("ovsingles").checked = ov.stackSingles;
+    $("ovstackmin").value = ov.stackMin; $("ovstackcolor").value = ov.stackColor; $("ovstackcolor").className = "hex"; $("ovstackswatch").style.background = ov.stackColor;
+    $("tierrows").innerHTML = ov.tiers.map(function (t, i) { return '<div class="tierrow">worth at least <input type="number" min="0" step="1000" data-tier="' + i + '" value="' + t.min + '"> gp <input class="hex" type="text" spellcheck="false" maxlength="7" data-tiercolor="' + i + '" value="' + t.color + '"> <i class="sw" style="background:' + t.color + '"></i></div>'; }).join("");
+    Array.prototype.forEach.call($("settings").querySelectorAll("input[data-ov]"), function (el) { el.checked = !!ov[el.getAttribute("data-ov")]; });
+  }
+  function overlayChanged() { applyOverlayLook(); changed(); }
+  $("ovtiers").addEventListener("change", function () { settings.ov.showTiers = this.checked; overlayChanged(); });
+  $("ovstack").addEventListener("change", function () { settings.ov.showStack = this.checked; overlayChanged(); });
+  $("ovsingles").addEventListener("change", function () { settings.ov.stackSingles = this.checked; overlayChanged(); });
+  $("ovstackmin").addEventListener("change", function () { settings.ov.stackMin = Math.max(0, Math.round(+this.value || 0)); this.value = settings.ov.stackMin; overlayChanged(); });
+  $("ovstackcolor").addEventListener("change", function () { var h = cleanHex(this.value); this.className = "hex" + (h ? "" : " bad"); if (!h) return; settings.ov.stackColor = h; this.value = h; $("ovstackswatch").style.background = h; overlayChanged(); });
+  $("tierrows").addEventListener("change", function (e) {
+    var el = e.target, i = el.getAttribute("data-tier"), c = el.getAttribute("data-tiercolor");
+    if (i !== null) { settings.ov.tiers[+i].min = Math.max(0, Math.round(+el.value || 0)); el.value = settings.ov.tiers[+i].min; overlayChanged(); }
+    else if (c !== null) { var h = cleanHex(el.value); el.className = "hex" + (h ? "" : " bad"); if (!h) return; settings.ov.tiers[+c].color = h; el.value = h; el.nextElementSibling.style.background = h; overlayChanged(); }
+  });
+  Array.prototype.forEach.call($("settings").querySelectorAll("input[data-ov]"), function (el) { el.addEventListener("change", function () { settings.ov[el.getAttribute("data-ov")] = el.checked; overlayChanged(); }); });
+  $("ovreset").addEventListener("click", function () { settings.ov = ovDefaults(); renderOverlaySettings(); overlayChanged(); });
+  $("bankreset").addEventListener("click", function (e) { e.preventDefault(); bank = {}; store.set("bankwise.bank.v1", "{}"); if (view) noteBank(view); renderBankTotal(); });
+
   function changed() { saveSettings(); overlaySig = ""; if (view) { render(); drawOverlay(); } renderProfile(); }
 
   function renderWikiStatus() {
     if (!$("wikistatus")) return;
     $("wikistatus").textContent = building ? building : wikiInfo;
     $("wikibuild").textContent = building ? "Stop" : (wiki.n ? "Rebuild from the wiki" : "Build from the wiki");
-    $("wikidownload").style.display = wikiRaw && wikiRaw.names && wikiRaw.names.length ? "" : "none";
+    $("wikidownload").style.display = $("wikidownloadbin").style.display = wikiRaw && wikiRaw.names && wikiRaw.names.length ? "" : "none";
     $("wikiclear").style.display = wiki.n ? "" : "none";
   }
   var cancelBuild = false;
@@ -325,7 +453,8 @@
       return WikiBuild.save(raw).catch(function (e) { wikiInfo += " - could not be saved for next time: " + (e && e.message || e); renderWikiStatus(); });
     }).catch(function (e) { building = null; wikiInfo = "build failed: " + (e && e.message || e); renderWikiStatus(); });
   });
-  $("wikidownload").addEventListener("click", function () { if (wikiRaw) WikiBuild.download(wikiRaw); });
+  $("wikidownload").addEventListener("click", function () { if (wikiRaw) WikiBuild.download(wikiRaw, "json"); });
+  $("wikidownloadbin").addEventListener("click", function () { if (wikiRaw) WikiBuild.download(wikiRaw, "bin"); });
   $("wikiclear").addEventListener("click", function () { WikiBuild.clearLocal().then(function () { setWiki(null, ""); }); });
 
   $("opensettings").addEventListener("click", function () { var open = $("settings").style.display === "none"; $("settings").style.display = open ? "" : "none"; $("main").style.display = open ? "none" : ""; $("opensettings").className = open ? "on" : ""; renderLibStatus(); });
@@ -364,8 +493,15 @@
     if (this.getAttribute("data-sure") !== "1") { this.setAttribute("data-sure", "1"); this.textContent = "Really forget all " + lib.names().length + " items?"; var b = this; setTimeout(function () { b.setAttribute("data-sure", "0"); b.textContent = "Forget everything"; }, 4000); return; }
     lib = new Library(); libVersion++; saveLibrary(); this.setAttribute("data-sure", "0"); this.textContent = "Forget everything"; renderLibStatus();
   });
-  Array.prototype.forEach.call($("filters").querySelectorAll("button"), function (b) {
-    b.addEventListener("click", function () { filter = b.getAttribute("data-f"); Array.prototype.forEach.call($("filters").querySelectorAll("button"), function (o) { o.className = o === b ? "on" : ""; }); if (view) renderList(); });
+  /* confident = one clear candidate (no "or X") and a close match; the rest still want a hover */
+  function confidentGuesses() { return view ? view.slots.filter(function (s) { return s.id.state === "guess" && !(s.id.alts && s.id.alts.length) && s.id.d <= 9 && !s.covered; }) : []; }
+  $("acceptguesses").addEventListener("click", function () {
+    var n = 0;
+    confidentGuesses().forEach(function (s) { var src = clean[posKey(s)] || s; if (lib.add(s.id.name, src.patch, "wiki-accepted", src.shifts)) { n++; Data.factsFor(s.id.name); } });
+    if (n) { libVersion++; saveLibrary(); overlaySig = ""; tick(); }
+  });
+  Array.prototype.forEach.call($("filters").querySelectorAll("button[data-f]"), function (b) {
+    b.addEventListener("click", function () { filter = b.getAttribute("data-f"); Array.prototype.forEach.call($("filters").querySelectorAll("button[data-f]"), function (o) { o.className = o === b ? "on" : ""; }); if (view) renderList(); });
   });
   $("list").addEventListener("mouseover", function (e) {
     var el = e.target; while (el && el !== this && !el.getAttribute("data-i")) el = el.parentNode;
@@ -521,8 +657,11 @@
   Data.loadPrices();
   /* the wiki icon library: this computer's own build first, else the one shipped with the app */
   WikiBuild.loadLocal().then(function (raw) {
-    if (raw && raw.names && raw.names.length && raw.patches && raw.patches.length === raw.names.length * WikiLib.BYTES) return setWiki(raw, (raw.complete === false ? "partial build" : "built") + " on this computer");
-    return WikiBuild.loadShipped(VERSION).then(function (shipped) { setWiki(shipped, "shipped with the app"); });
+    if (raw && raw.names && raw.names.length && raw.patches && raw.patches.length === raw.names.length * WikiLib.BYTES) return setWiki(raw, raw.shipped ? "shipped with the app" : (raw.complete === false ? "partial build" : "built") + " on this computer");
+    return WikiBuild.loadShipped(VERSION).then(function (shipped) {
+      setWiki(shipped, "shipped with the app");
+      if (shipped) { shipped.shipped = true; WikiBuild.save(shipped).catch(function () { /* fetched again next time */ }); }   /* 20 MB: fetch it once, not at every start */
+    });
   }).catch(function () { setWiki(null, ""); });
   /* a starter library shipped with the app, so nobody begins from nothing */
   fetch("./data/seed-library.json?v=" + VERSION).then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
@@ -540,5 +679,5 @@
   render(); tick();
   setInterval(tick, READ_MS);
   setInterval(hoverTick, HOVER_MS);
-  window.Bankwise = { _wiki: function () { return wiki; }, _setWiki: setWiki, _view: function () { return view; }, _lib: function () { return lib; }, _teach: teach, _tick: tick, _settings: settings, cleanName: cleanName };
+  window.Bankwise = { _redraw: function () { overlaySig = ""; drawOverlay(); }, _bank: function () { return bank; }, _bankTotal: bankTotal, _wiki: function () { return wiki; }, _setWiki: setWiki, _view: function () { return view; }, _lib: function () { return lib; }, _teach: teach, _tick: tick, _settings: settings, cleanName: cleanName };
 })();

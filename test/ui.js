@@ -10,6 +10,9 @@ const { spawn } = require('child_process'); const path = require('path'), fs = r
   const ctx = await browser.newContext({ viewport: { width: 340, height: 620 } });
   const page = await ctx.newPage();
   const errs = []; page.on('pageerror', e => errs.push(e.message));
+  // the tests start from an empty library; the real starter library is checked on its own further down
+  await ctx.route('**/data/seed-library.json**', r => r.fulfill({ json: { v: 2, pw: 24, ph: 16, items: [], colours: {} } }));
+  await ctx.route('**/data/wiki-icons.json**', r => r.fulfill({ status: 404, body: '' }));
   // canned wiki data
   await ctx.route('**/rs_dump.json', r => r.fulfill({ json: { '%LAST_UPDATE%': 1, 1513: { id: 1513, name: 'Magic logs', price: 412, highalch: 192, value: 320 }, 2: { id: 2, name: 'Rusty sword', price: 60, highalch: 15, value: 25 }, 3: { id: 3, name: 'Noxious scythe', price: 61000000, highalch: 300000, value: 500000 } } }));
   // a pretend wiki: 14 items whose "icons" are sprites cut out of the real capture (trimmed, transparent, a little noisy)
@@ -32,6 +35,12 @@ const { spawn } = require('child_process'); const path = require('path'), fs = r
       return r.fulfill({ json: second ? { query: { pages } } : { continue: { gcmcontinue: 'page|x', continue: 'gcmcontinue||' }, query: { pages } }, headers: { 'access-control-allow-origin': '*' } });
     }
     const titles = decodeURIComponent((r.request().url().match(/titles=([^&]*)/) || [])[1] || '').split('|'); const pages = {}; let i = 1;
+    if (/^Module:GE/.test(titles[0])) {   // the wiki's own price / alch / value tables
+      const tables = { 'Module:GEPrices/data.json': { '%LAST_UPDATE%': 1, 'Magic logs': 412, 'Rusty sword': 60, 'Noxious scythe': 61000000 }, 'Module:GEHighAlchs/data.json': { 'Magic logs': 192, 'Rusty sword': 15, 'Noxious scythe': 300000 }, 'Module:GEValues/data.json': { 'Magic logs': 320 } };
+      for (let k = 0; k < 120; k++) tables['Module:GEPrices/data.json']['Filler ' + k] = 5;
+      titles.forEach(t => { pages[i++] = { title: t, revisions: [{ slots: { main: { '*': JSON.stringify(tables[t] || {}) } } }] }; });
+      return r.fulfill({ json: { query: { pages } }, headers: { 'access-control-allow-origin': '*' } });
+    }
     titles.forEach(t => { if (/boits/i.test(t)) { pages[i++] = { title: t, missing: '' }; return; } const cats = /santa/i.test(t) ? ['Reclaimable from Diango', 'Holiday items'] : /commorb/i.test(t) ? ['Quest items', 'While Guthix Sleeps'] : /logs/i.test(t) ? ['Logs', 'Firemaking'] : ['Items']; pages[i++] = { title: t, categories: cats.map(c => ({ title: 'Category:' + c })) }; });
     r.fulfill({ json: { query: { pages } }, headers: { 'access-control-allow-origin': '*' } });
   });
@@ -78,6 +87,34 @@ const { spawn } = require('child_process'); const path = require('path'), fs = r
   await page.hover('#list .item:has-text("Magic logs")');
   const card = await page.textContent('#hover');
   ok('detail card: price, tab and reason for Magic logs', /412/.test(card) && /tab 4/.test(card) && /Consumable supply/.test(card), card.replace(/\s+/g, ' '));
+  ok('detail card shows the high alch value', /High alch\s*192/.test(card), card.replace(/\s+/g, ' '));
+  const total = await page.evaluate(() => ({ shown: document.getElementById('banktotal').style.display !== 'none', text: document.getElementById('banktotal').textContent.replace(/\s+/g, ' '), t: Bankwise._bankTotal() }));
+  ok('bank total is shown: "' + total.text.trim() + '"', total.shown && total.t.items === 3 && total.t.total >= 412 && /Bank total/.test(total.text), JSON.stringify(total));
+  // overlay: gold stack value under the item, colour bar by the price of ONE item, all of it adjustable
+  const ovNow = async () => { await page.evaluate(() => { window.__ov.length = 0; Bankwise._redraw(); }); await page.waitForTimeout(300); return page.evaluate(() => { const s = Bankwise._view().slots.filter(q => q.id.name === 'Magic logs' && q.id.state === 'known')[0], mine = o => o[2] >= s.x && o[2] < s.x + s.w && o[3] >= s.y - 2 && o[3] <= s.y + s.h + 2; return { slot: { x: s.x, y: s.y, stack: s.stack }, rects: window.__ov.filter(o => o[0] === 'rect' && o[2] >= s.x && o[2] < s.x + s.w && o[3] >= s.y && o[3] < s.y + s.h).map(o => [o[1], o[5]]), texts: window.__ov.filter(o => o[0] === 'text' && o[4] >= s.x && o[4] < s.x + s.w && o[5] >= s.y && o[5] <= s.y + s.h + 2).map(o => [o[1], o[2]]), all: window.__ov.filter(o => o[0] === 'text').map(o => o[1]), gold: A1lib.mixColor(248, 213, 107), red: A1lib.mixColor(255, 0, 0) }; }); };
+  let o1 = await ovNow();
+  ok('overlay writes the stack value in gold under the item (' + JSON.stringify(o1.texts.map(t => t[0])) + ', stack ' + JSON.stringify(o1.slot.stack) + '), and a 412 gp item gets no colour bar', o1.texts.some(t => t[1] === o1.gold && /^~?[0-9.]+[KMB]?$/.test(t[0])) && !o1.rects.some(r => r[1] === 2), JSON.stringify(o1));
+  await page.click('#opensettings');
+  await page.fill('input[data-tier="0"]', '400'); await page.dispatchEvent('input[data-tier="0"]', 'change');
+  await page.fill('input[data-tiercolor="0"]', 'ff0000'); await page.dispatchEvent('input[data-tiercolor="0"]', 'change');
+  let o2 = await ovNow();
+  ok('cutoff lowered to 400 and colour set to #ff0000: the item gets a red bar', o2.rects.some(r => r[0] === o2.red && r[1] === 2), JSON.stringify(o2.rects));
+  await page.uncheck('#ovtiers'); await page.uncheck('#ovstack'); await page.uncheck('input[data-ov="tagD"]');
+  let o3 = await ovNow();
+  ok('colour bars, stack values and the D letter can each be switched off', !o3.rects.some(r => r[1] === 2) && !o3.texts.length && !o3.all.includes('D') && o3.all.includes('K'), JSON.stringify(o3));
+  await page.check('#ovstack'); await page.fill('#ovstackmin', '100000000'); await page.dispatchEvent('#ovstackmin', 'change');
+  let o4 = await ovNow();
+  ok('stack values below the chosen minimum are left out', !o4.texts.length, JSON.stringify(o4.texts));
+  await page.click('#ovreset'); await page.waitForTimeout(200);
+  await page.screenshot({ path: path.join(__dirname, '../docs/ui-overlay-settings.png'), fullPage: true });
+  const back = await page.evaluate(() => Bankwise._settings.ov);
+  ok('"Overlay back to defaults" restores everything', back.tiers[0].min === 1000 && back.tiers[0].color === '#4ea56a' && back.showTiers && back.showStack && back.stackMin === 0 && back.tagD, JSON.stringify(back));
+  await page.click('#closesettings');
+  // the card follows the mouse even with teach off
+  await page.uncheck('#teach'); await page.hover('#list .item:has-text("Santa hat")');
+  await page.evaluate((i) => { const s = Bankwise._view().slots[i]; window.alt1.mousePosition = ((s.x + 20) << 16) + (s.y + 20); window.__tip = ''; }, idx.logs); await page.waitForTimeout(700);
+  ok('teach off: the card still shows the item under the mouse', (await page.textContent('#hname')) === 'Magic logs');
+  await page.evaluate(() => { window.alt1.mousePosition = -1; }); await page.check('#teach');
   await page.screenshot({ path: path.join(__dirname, '../docs/ui-learned.png') });
 
   // the font reader's l/i slip is put right from the wiki
@@ -158,6 +195,9 @@ const { spawn } = require('child_process'); const path = require('path'), fs = r
   const after = await p6.evaluate(([a, b]) => { const v = Bankwise._view(), f = p => v.slots.filter(q => q.x === p[0] && q.y === p[1])[0].id; return { names: Bankwise._lib().names(), s1: f(a).state, s2: f(b).state + ' ' + f(b).name }; }, [[t1.x, t1.y], [t2.x, t2.y]]);
   ok('hovering a guess confirms it (' + after.s1 + '); a tooltip naming a different wiki item is refused, slot stays "' + after.s2 + '"', after.names.length === 1 && after.names[0] === 'Test item 1' && after.s1 === 'known' && /^guess Test item 2/.test(after.s2) && e6.length === 0, JSON.stringify(after) + e6.join('|'));
   await p6.screenshot({ path: path.join(__dirname, '../docs/ui-guesses.png') });
+  const accText = await p6.textContent('#acceptguesses'); await p6.click('#acceptguesses'); await p6.waitForTimeout(1500);
+  const acc = await p6.evaluate(() => ({ lib: Bankwise._lib().names().length, guessed: Bankwise._view().slots.filter(q => q.id.state === 'guess').length, counts: document.getElementById('counts').textContent }));
+  ok('"' + accText.trim() + '" stores them in one click: ' + acc.lib + ' items in the library, ' + acc.guessed + ' guesses left; ' + (acc.counts.match(/worth about [^ ]+/) || ['no total'])[0], acc.lib >= 8 && acc.guessed < 15, JSON.stringify(acc));
   await p6.reload(); await p6.waitForTimeout(1200);
   ok('the icon library is still there after a reload', (await p6.evaluate(() => Bankwise._wiki().n)) === 14);
 
@@ -166,6 +206,8 @@ const { spawn } = require('child_process'); const path = require('path'), fs = r
   await p2.addInitScript(() => { delete window.alt1; });
   const c3 = await browser.newContext({ viewport: { width: 340, height: 520 } }); const p3 = await c3.newPage(); p3.on('pageerror', e => e2.push(e.message));
   await p3.goto('http://127.0.0.1:8378/index.html'); await p3.waitForTimeout(500);
+  const seedN = await p3.evaluate(() => Bankwise._lib().names().length);
+  ok('the shipped starter library loads: ' + seedN + ' items known before anything is taught', seedN > 600 && !(await p3.evaluate(() => Bankwise._lib().names().some(n => /^view tab/i.test(n)))));
   ok('outside Alt1 it says so and does not crash', /inside Alt1/.test(await p3.textContent('#status')) && e2.length === 0, e2.join(' | '));
   await browser.close(); srv.kill(); console.log(fails ? fails + ' FAILED' : 'all UI checks passed'); process.exit(fails ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(1); });

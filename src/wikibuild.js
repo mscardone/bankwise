@@ -104,10 +104,11 @@
       });
     }).catch(function () { return null; });
   }
-  function download(lib) {
+  /* one file per click: a second download started by script is silently dropped by Alt1's browser */
+  function download(lib, which) {
     function give(blob, name) { var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove(); }
-    give(new Blob([JSON.stringify({ v: 1, bytes: WikiLib.BYTES, category: lib.category, at: lib.at, names: lib.names, files: lib.files })], { type: "application/json" }), "wiki-icons.json");
-    setTimeout(function () { give(new Blob([lib.patches], { type: "application/octet-stream" }), "wiki-icons.bin"); }, 600);
+    if (which === "bin") give(new Blob([lib.patches], { type: "application/octet-stream" }), "wiki-icons.bin");
+    else give(new Blob([JSON.stringify({ v: 1, bytes: WikiLib.BYTES, category: lib.category, at: lib.at, names: lib.names, files: lib.files })], { type: "application/json" }), "wiki-icons.json");
   }
 
   root.WikiBuild = { build: build, save: save, loadLocal: loadLocal, loadShipped: loadShipped, clearLocal: clearLocal, download: download, fileUrl: fileUrl };

@@ -12,13 +12,16 @@
 })(this, function () {
   "use strict";
   var PRICE_URL = "https://chisel.weirdgloop.org/gazproj/gazbot/rs_dump.json";
+  /* the same figures as pages on the wiki itself, which answers from inside Alt1 where the dump does not:
+     name -> number tables kept by the wiki's Grand Exchange bot (prices, high alchemy, shop value) */
+  var BULK_PAGES = { price: "Module:GEPrices/data.json", alch: "Module:GEHighAlchs/data.json", value: "Module:GEValues/data.json" };
   var PRICE_ONE = "https://api.weirdgloop.org/exchange/history/rs/latest?name=";
   var WIKI_API = "https://runescape.wiki/api.php";
   var DAY = 24 * 3600 * 1000;
   var store = { get: function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } }, set: function (k, v) { try { localStorage.setItem(k, v); return true; } catch (e) { return false; } } };
 
   var prices = null, pricesAt = 0, facts = {}, pending = {}, queue = [], timer = null, listeners = [];
-  var status = { prices: "not loaded", facts: "idle", lastError: "" };
+  var status = { prices: "not loaded", facts: "idle", alch: "not loaded", lastError: "" };
 
   function key(name) { return String(name || "").toLowerCase().replace(/\s+/g, " ").trim(); }
   function changed() { listeners.forEach(function (f) { try { f(); } catch (e) { /* ui only */ } }); }
@@ -34,15 +37,51 @@
     }
     return n ? out : null;
   }
+  function bulkUrl() {
+    var t = []; for (var k in BULK_PAGES) t.push(BULK_PAGES[k]);
+    return WIKI_API + "?action=query&format=json&origin=*&prop=revisions&rvprop=content&rvslots=main&titles=" + encodeURIComponent(t.join("|"));
+  }
+  /* the api answer for the three table pages -> {key: [price, alch, value]}, or null when the price table is not there */
+  function parseBulk(j) {
+    var pages = j && j.query && j.query.pages || {}, tables = {}, id, k, n = 0, out = {};
+    for (id in pages) {
+      var pg = pages[id], rev = pg.revisions && pg.revisions[0], text = rev && (rev.slots && rev.slots.main ? (rev.slots.main["*"] !== undefined ? rev.slots.main["*"] : rev.slots.main.content) : rev["*"]);
+      if (!text) continue;
+      for (k in BULK_PAGES) if (BULK_PAGES[k] === pg.title) { try { tables[k] = JSON.parse(text); } catch (e) { /* not the table we expected */ } }
+    }
+    if (!tables.price) return null;
+    for (k in tables.price) {
+      var v = tables.price[k];
+      if (k.charAt(0) === "%" || typeof v !== "number") continue;
+      var a = tables.alch && typeof tables.alch[k] === "number" ? tables.alch[k] : 0, val = tables.value && typeof tables.value[k] === "number" ? tables.value[k] : 0;
+      if (!a && val) a = Math.floor(val * 0.6);      /* high alchemy pays 60% of an item's value */
+      out[key(k)] = [v, a, val]; n++;
+    }
+    status.alch = tables.alch ? "from the wiki's table" : (tables.value ? "worked out from item values" : "not available");
+    return n > 100 ? out : null;
+  }
+  function loadBulk() {
+    return fetch(bulkUrl()).then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); }).then(function (j) {
+      var p = parseBulk(j);
+      if (!p) throw new Error("the wiki's price tables were not where expected");
+      return p;
+    });
+  }
   function loadPrices(force) {
     if (!prices) {
       try { var c = JSON.parse(store.get("bankwise.prices.v1") || "null"); if (c && c.p) { prices = c.p; pricesAt = c.at; status.prices = Object.keys(prices).length + " items (cached)"; } } catch (e) { /* refetch */ }
     }
     if (prices && !force && Date.now() - pricesAt < DAY) return Promise.resolve(true);
     status.prices = prices ? status.prices + ", refreshing" : "loading";
-    return fetch(PRICE_URL).then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); }).then(function (j) {
-      var p = parseDump(j);
-      if (!p) throw new Error("price file had no items");
+    var bulkWhy = "";
+    return loadBulk().catch(function (e) {
+      bulkWhy = e.message;
+      return fetch(PRICE_URL).then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); }).then(function (j) {
+        var p = parseDump(j);
+        if (!p) throw new Error("price file had no items");
+        return p;
+      }).catch(function (e2) { throw new Error("wiki tables: " + bulkWhy + "; price dump: " + e2.message); });
+    }).then(function (p) {
       prices = p; pricesAt = Date.now();
       store.set("bankwise.prices.v1", JSON.stringify({ at: pricesAt, p: p }));
       status.prices = Object.keys(p).length + " items (fresh)";
@@ -55,7 +94,7 @@
     if (p) return { price: p[0], alch: p[1], value: p[2] };
     var o = one[key(name)];
     if (!prices && !o && name && !onePending[key(name)]) { onePending[key(name)] = 1; oneQueue.push(name); if (!oneTimer) oneTimer = setTimeout(flushOne, 500); }
-    return o && o.price !== null ? { price: o.price, alch: 0, value: 0 } : null;
+    return o && o.price !== null ? { price: o.price, alch: null, value: null } : null;
   }
   /* true once we can tell "not on the Grand Exchange" from "don't know yet" for this item */
   function pricesLoaded(name) { return !!prices || !!(name && one[key(name)]); }
@@ -78,10 +117,18 @@
 
   /* debug: fetch each source once and report exactly what came back */
   function selfTest() {
-    var urls = [["price dump", PRICE_URL], ["price, one item", PRICE_ONE + encodeURIComponent("Magic logs|Santa hat")],
+    var urls = [["wiki price + alch tables", bulkUrl()], ["price dump", PRICE_URL], ["price, one item", PRICE_ONE + encodeURIComponent("Magic logs|Santa hat")],
       ["wiki categories", WIKI_API + "?action=query&format=json&origin=*&redirects=1&prop=categories&cllimit=max&clshow=!hidden&titles=" + encodeURIComponent("Magic logs|Santa hat|Commorb")]];
     return Promise.all(urls.map(function (u) {
-      return fetch(u[1]).then(function (r) { return r.text().then(function (t) { return u[0] + ": HTTP " + r.status + ", " + t.length + " chars\n    " + t.slice(0, u[0] === "wiki categories" ? 1500 : 400).replace(/\s+/g, " "); }); })
+      return fetch(u[1]).then(function (r) { return r.text().then(function (t) {
+        if (u[0] === "wiki price + alch tables") {
+          try {
+            var pages = JSON.parse(t).query.pages, rows = [], id;
+            for (id in pages) { var pg = pages[id], rev = pg.revisions && pg.revisions[0], txt = rev && (rev.slots && rev.slots.main ? (rev.slots.main["*"] || rev.slots.main.content) : rev["*"]) || ""; rows.push("    " + pg.title + ": " + (pg.missing !== undefined ? "NO SUCH PAGE" : txt.length + " chars, starts " + txt.slice(0, 90).replace(/\s+/g, " "))); }
+            return u[0] + ": HTTP " + r.status + ", " + t.length + " chars\n" + rows.join("\n");
+          } catch (e) { /* fall through to the raw text */ }
+        }
+        return u[0] + ": HTTP " + r.status + ", " + t.length + " chars\n    " + t.slice(0, u[0] === "wiki categories" ? 1500 : 400).replace(/\s+/g, " "); }); })
         .catch(function (e) { return u[0] + ": FAILED - " + e.message + "\n    " + u[1]; });
     }));
   }
@@ -172,6 +219,6 @@
     loadPrices: loadPrices, selfTest: selfTest, resolveName: resolveName, _variants: variants, price: price, pricesLoaded: pricesLoaded, factsFor: factsFor, describe: describe, status: status,
     onChange: function (f) { listeners.push(f); }, key: key,
     clearCache: function () { facts = {}; saveFacts(); prices = null; pricesAt = 0; store.set("bankwise.prices.v1", "null"); },
-    _parseDump: parseDump, _collect: collect, _facts: function () { return facts; }
+    _parseDump: parseDump, _parseBulk: parseBulk, _collect: collect, _facts: function () { return facts; }
   };
 });
